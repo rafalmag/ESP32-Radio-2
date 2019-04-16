@@ -8,4 +8,4 @@
 .vscode/ipch/
 *.code-workspace
 src/myWifi.h
-
+myConfig.txt
