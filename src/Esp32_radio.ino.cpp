@@ -160,7 +160,8 @@
 //#define OLED                         // 64x128 I2C OLED
 //#define DUMMYTFT                     // Dummy display
 //#define LCD1602I2C                   // LCD 1602 display with I2C backpack
-#define ILI9341                      // ILI9341 240*320
+#define ILI9341                      // ILI9341 320*240
+// #define ILI9341Horizontal                      // ILI9341 240*320
 //#define NEXTION                      // Nextion display. Uses UART 2 (pin 16 and 17)
 //
 #include <nvs.h>
@@ -332,9 +333,9 @@ struct keyname_t                                      // For keys in NVS
 // Items in ini_block can be changed by commands from webserver/MQTT/Serial.                       *
 //**************************************************************************************************
 
-enum display_t { T_UNDEFINED, T_BLUETFT, T_OLED,         // Various types of display
-                 T_DUMMYTFT, T_LCD1602I2C, T_ILI9341,
-                 T_NEXTION } ;
+// enum display_t { T_UNDEFINED, T_BLUETFT, T_OLED,         // Various types of display
+//                  T_DUMMYTFT, T_LCD1602I2C, T_ILI9341,
+//                  T_NEXTION } ;
 
 enum datamode_t { INIT = 1, HEADER = 2, DATA = 4,        // State for datastream
                   METADATA = 8, PLAYLISTINIT = 16,
@@ -352,7 +353,7 @@ WiFiClient        mp3client ;                            // An instance of the m
 WiFiClient        cmdclient ;                            // An instance of the client for commands
 // WiFiClient        wmqttclient ;                          // An instance for mqtt
 // PubSubClient      mqttclient ( wmqttclient ) ;           // Client for MQTT subscriber
-HardwareSerial*   nxtserial = NULL ;                     // Serial port for NEXTION (if defined)
+// HardwareSerial*   nxtserial = NULL ;                     // Serial port for NEXTION (if defined)
 TaskHandle_t      maintask ;                             // Taskhandle for main task
 TaskHandle_t      xplaytask ;                            // Task handle for playtask
 TaskHandle_t      xspftask ;                             // Task handle for special functions
@@ -415,7 +416,7 @@ uint32_t          max_mp3loop_time = 0 ;                 // To check max handlin
 int16_t           scanios ;                              // TEST*TEST*TEST
 int16_t           scaniocount ;                          // TEST*TEST*TEST
 uint16_t          bltimer = 0 ;                          // Backlight time-out counter
-display_t         displaytype = T_UNDEFINED ;            // Display type
+// display_t         displaytype = T_UNDEFINED ;            // Display type
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
@@ -1068,7 +1069,7 @@ VS1053* vs1053player ;
 #include "bluetft.h"                                     // For ILI9163C or ST7735S 128x160 display
 #endif
 #ifdef ILI9341
-#include "ILI9341.h"                                     // For ILI9341 320x240 display
+#include "ILI9341.h"                                     // For ILI9341 240x320 display (vertical)
 #endif
 #ifdef OLED
 #include "SSD1306.h"                                     // For OLED I2C SD1306 64x128 display
@@ -1081,6 +1082,9 @@ VS1053* vs1053player ;
 #endif
 #ifdef NEXTION
 #include "NEXTION.h"                                     // For NEXTION display
+#endif
+#ifdef ILI9341Horizontal
+#include "ILI9341horizontal.h"                           // For ILI9341 320x240 display
 #endif
 
 
@@ -2054,15 +2058,15 @@ void showstreamtitle ( const char *ml, bool full )
   if ( ( p1 = strstr ( streamtitle, " - " ) ) ) // look for artist/title separator
   {
     p2 = p1 + 3 ;                               // 2nd part of text at this position
-    if ( displaytype == T_NEXTION )
-    {
-      *p1++ = '\\' ;                            // Found: replace 3 characters by "\r"
-      *p1++ = 'r' ;                             // Found: replace 3 characters by "\r"
-    }
-    else
-    {
+    // if ( displaytype == T_NEXTION )
+    // {
+    //   *p1++ = '\\' ;                            // Found: replace 3 characters by "\r"
+    //   *p1++ = 'r' ;                             // Found: replace 3 characters by "\r"
+    // }
+    // else
+    // {
       *p1++ = '\n' ;                            // Found: replace 3 characters by newline
-    }
+    // }
     if ( *p2 == ' ' )                           // Leading space in title?
     {
       p2++ ;
@@ -2266,14 +2270,14 @@ void handle_ID3 ( String &path )
            ( strncmp ( ID3tag.tagid, "TPE1", 4 ) == 0 ) )   // or artist?
       {
         albttl += String ( metalinebf + 1 ) ;               // Yes, add to string
-        if ( displaytype == T_NEXTION )                     // NEXTION display?
-        {
-          albttl += String ( "\\r" ) ;                      // Add code for newline (2 characters)
-        }
-        else
-        {
+        // if ( displaytype == T_NEXTION )                     // NEXTION display?
+        // {
+        //   albttl += String ( "\\r" ) ;                      // Add code for newline (2 characters)
+        // }
+        // else
+        // {
           albttl += String ( "\n" ) ;                       // Add newline (1 character)
-        }
+        // }
       }
       if ( strncmp ( ID3tag.tagid, "TIT2", 4 ) == 0 )       // Songtitle?
       {
@@ -2980,13 +2984,13 @@ void scanserial()
       if ( len )
       {
         strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
-        if ( nxtserial )                         // NEXTION test possible?
-        {
-          if ( serialcmd.startsWith ( "N:" ) )   // Command meant to test Nextion display?
-          {
-            nxtserial->printf ( "%s\xFF\xFF\xFF", cmd + 2 ) ;
-          }
-        }
+        // if ( nxtserial )                         // NEXTION test possible?
+        // {
+        //   if ( serialcmd.startsWith ( "N:" ) )   // Command meant to test Nextion display?
+        //   {
+        //     nxtserial->printf ( "%s\xFF\xFF\xFF", cmd + 2 ) ;
+        //   }
+        // }
         reply = analyzeCmd ( cmd ) ;             // Analyze command and handle it
         dbgprint ( reply ) ;                     // Result for debugging
         serialcmd = "" ;                         // Prepare for new command
@@ -3004,56 +3008,56 @@ void scanserial()
 }
 
 
-//**************************************************************************************************
-//                                     S C A N S E R I A L 2                                       *
-//**************************************************************************************************
-// Listen to commands on the 2nd Serial inputline (NEXTION).                                       *
-//**************************************************************************************************
-void scanserial2()
-{
-  static String  serialcmd ;                       // Command from Serial input
-  char           c ;                               // Input character
-  const char*    reply = "" ;                      // Reply string from analyzeCmd
-  uint16_t       len ;                             // Length of input string
-  static uint8_t ffcount = 0 ;                     // Counter for 3 tmes "0xFF"
+// //**************************************************************************************************
+// //                                     S C A N S E R I A L 2                                       *
+// //**************************************************************************************************
+// // Listen to commands on the 2nd Serial inputline (NEXTION).                                       *
+// //**************************************************************************************************
+// void scanserial2()
+// {
+//   static String  serialcmd ;                       // Command from Serial input
+//   char           c ;                               // Input character
+//   const char*    reply = "" ;                      // Reply string from analyzeCmd
+//   uint16_t       len ;                             // Length of input string
+//   static uint8_t ffcount = 0 ;                     // Counter for 3 tmes "0xFF"
 
-  if ( nxtserial )                                 // NEXTION active?
-  {
-    while ( nxtserial->available() )               // Yes, any input seen?
-    {
-      c =  (char)nxtserial->read() ;               // Yes, read the next input character
-      len = serialcmd.length() ;                   // Get the length of the current string
-      if ( c == 0xFF )                             // End of command?
-      {
-        if ( ++ffcount < 3 )                       // 3 times FF?
-        {
-          continue ;                               // No, continue to read
-        }
-        ffcount = 0 ;                              // For next command
-        if ( len )
-        {
-          strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
-          dbgprint ( "NEXTION command seen %02X %s",
-                     cmd[0], cmd + 1 ) ;
-          if ( cmd[0] == 0x70 )                    // Button pressed?
-          { 
-            reply = analyzeCmd ( cmd + 1 ) ;       // Analyze command and handle it
-            dbgprint ( reply ) ;                   // Result for debugging
-          }
-          serialcmd = "" ;                         // Prepare for new command
-        }
-      }
-      else if ( c >= ' ' )                         // Only accept useful characters
-      {
-        serialcmd += c ;                           // Add to the command
-      }
-      if ( len >= ( sizeof(cmd) - 2 )  )           // Check for excessive length
-      {
-        serialcmd = "" ;                           // Too long, reset
-      }
-    }
-  }
-}
+//   if ( nxtserial )                                 // NEXTION active?
+//   {
+//     while ( nxtserial->available() )               // Yes, any input seen?
+//     {
+//       c =  (char)nxtserial->read() ;               // Yes, read the next input character
+//       len = serialcmd.length() ;                   // Get the length of the current string
+//       if ( c == 0xFF )                             // End of command?
+//       {
+//         if ( ++ffcount < 3 )                       // 3 times FF?
+//         {
+//           continue ;                               // No, continue to read
+//         }
+//         ffcount = 0 ;                              // For next command
+//         if ( len )
+//         {
+//           strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
+//           dbgprint ( "NEXTION command seen %02X %s",
+//                      cmd[0], cmd + 1 ) ;
+//           if ( cmd[0] == 0x70 )                    // Button pressed?
+//           { 
+//             reply = analyzeCmd ( cmd + 1 ) ;       // Analyze command and handle it
+//             dbgprint ( reply ) ;                   // Result for debugging
+//           }
+//           serialcmd = "" ;                         // Prepare for new command
+//         }
+//       }
+//       else if ( c >= ' ' )                         // Only accept useful characters
+//       {
+//         serialcmd += c ;                           // Add to the command
+//       }
+//       if ( len >= ( sizeof(cmd) - 2 )  )           // Check for excessive length
+//       {
+//         serialcmd = "" ;                           // Too long, reset
+//       }
+//     }
+//   }
+// }
 
 
 //**************************************************************************************************
