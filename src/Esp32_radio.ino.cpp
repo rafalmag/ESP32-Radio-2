@@ -160,7 +160,8 @@
 //#define OLED                         // 64x128 I2C OLED
 //#define DUMMYTFT                     // Dummy display
 //#define LCD1602I2C                   // LCD 1602 display with I2C backpack
-#define ILI9341                      // ILI9341 320*240
+// #define ILI9341                      // ILI9341 320*240
+#define ILI9341_CLOCK                      // ILI9341 320*240 clock
 // #define ILI9341Horizontal                      // ILI9341 240*320
 //#define NEXTION                      // Nextion display. Uses UART 2 (pin 16 and 17)
 //
@@ -215,7 +216,8 @@
 //**************************************************************************************************
 // Forward declaration and prototypes of various functions.                                        *
 //**************************************************************************************************
-void        displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
+// void        displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
+void        displaytime2 ( tm* timeinfo, boolean redraw) ;
 void        showstreamtitle ( const char* ml, bool full = false ) ;
 void        handlebyte_ch ( uint8_t b ) ;
 void        handleFSf ( const String& pagename ) ;
@@ -1086,6 +1088,9 @@ VS1053* vs1053player ;
 #ifdef ILI9341Horizontal
 #include "ILI9341horizontal.h"                           // For ILI9341 320x240 display
 #endif
+#ifdef ILI9341_CLOCK
+#include "ILI9341-clock.h"                           // For ILI9341 320x240 display with clock
+#endif
 
 
 //**************************************************************************************************
@@ -1408,6 +1413,7 @@ char* dbgprint ( const char* format, ... )
   va_end ( varArgs ) ;                                 // End of using parameters
   if ( DEBUG )                                         // DEBUG on?
   {
+    Serial.print ( millis() ) ;                           // Yes, print prefix
     Serial.print ( "D: " ) ;                           // Yes, print prefix
     Serial.println ( sbuf ) ;                          // and the info
   }
@@ -2113,7 +2119,7 @@ bool connecttohost()
   stop_mp3client() ;                                // Disconnect if still connected
   dbgprint ( "Connect to new host %s", host.c_str() ) ;
   tftset ( 0, "ESP32-Radio" ) ;                     // Set screen segment text top line
-  displaytime ( "" ) ;                              // Clear time on TFT screen
+  displaytime2 ( &timeinfo, true ) ;                              // Clear time on TFT screen
   datamode = INIT ;                                 // Start default in metamode
   chunked = false ;                                 // Assume not chunked
   if ( host.endsWith ( ".m3u" ) )                   // Is it an m3u playlist?
@@ -2301,7 +2307,7 @@ bool connecttofile()
   String path ;                                           // Full file spec
 
   tftset ( 0, "ESP32 MP3 Player" ) ;                      // Set screen segment top line
-  displaytime ( "" ) ;                                    // Clear time on TFT screen
+  displaytime2 ( &timeinfo, true ) ;                     // Clear time on TFT screen
   path = host.substring ( 9 ) ;                           // Path, skip the "localhost" part
   claimSPI ( "sdopen3" ) ;                                // Claim SPI bus
   handle_ID3 ( path ) ;                                   // See if there are ID3 tags in this file
@@ -2373,8 +2379,8 @@ bool connectwifi()
     pfs = dbgprint ( "IP = %s", ipaddress.c_str() ) ;   // String to dispay on TFT
   }
   tftlog ( pfs ) ;                                      // Show IP
-  delay ( 3000 ) ;                                      // Allow user to read this
-  tftlog ( "\f" ) ;                                     // Select new page if NEXTION 
+  delay ( 100 ) ;                                      // Allow user to read this
+  // tftlog ( "\f" ) ;                                     // Select new page if NEXTION 
   return ( localAP == false ) ;                         // Return result of connection
 }
 
@@ -3561,7 +3567,7 @@ void setup()
       dsp_print ( "Starting..." "\n" "Version:" ) ;
       strncpy ( tmpstr, VERSION, 16 ) ;                  // Limit version length
       dsp_println ( tmpstr ) ;
-      dsp_println ( "By Ed Smallenburg" ) ;
+      dsp_println ( "By Ed Smallenburg and Rafal Magda" ) ;
       dsp_update() ;                                     // Show on physical screen
     }
   }
@@ -3606,7 +3612,7 @@ void setup()
   WiFi.persistent ( false ) ;                            // Do not save SSID and password
   WiFi.disconnect() ;                                    // After restart router could still
   delay ( 100 ) ;                                        // keep old connection
-  listNetworks() ;                                       // Search for WiFi networks
+  // listNetworks() ;                                       // Search for WiFi networks
   readprefs ( false ) ;                                  // Read preferences
   tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA, NAME ) ;
   vs1053player->begin() ;                                 // Initialize VS1053 player
@@ -3658,11 +3664,14 @@ void setup()
   timerAttachInterrupt ( timer, &timer100, true ) ;      // Call timer100() on timer alarm
   timerAlarmWrite ( timer, 100000, true ) ;              // Alarm every 100 msec
   timerAlarmEnable ( timer ) ;                           // Enable the timer
-  delay ( 1000 ) ;                                       // Show IP for a while
-  configTime ( ini_block.clk_offset * 3600,
-               ini_block.clk_dst * 3600,
-               ini_block.clk_server.c_str() ) ;          // GMT offset, daylight offset in seconds
+  // configTime ( ini_block.clk_offset * 3600,
+  //              ini_block.clk_dst * 3600,
+  //              ini_block.clk_server.c_str() ) ;          // GMT offset, daylight offset in seconds
+  // https://www.pool.ntp.org/zone/pl
+  // Set timezone to CEST
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0", "2.pl.pool.ntp.org", "1.pl.pool.ntp.org", "0.pl.pool.ntp.org");
   timeinfo.tm_year = 0 ;                                 // Set TOD to illegal
+  delay ( 100 ) ;                                       // Show IP for a while
   // Init settings for rotary switch (if existing).
   if ( ( ini_block.enc_clk_pin + ini_block.enc_dt_pin + ini_block.enc_sw_pin ) > 2 )
   {
@@ -5681,7 +5690,7 @@ void handle_spec()
     if ( NetworkFound  )                                      // Time available?
     {
       gettime() ;                                             // Yes, get the current time
-      displaytime ( timetxt ) ;                               // Write to TFT screen
+      displaytime2 ( &timeinfo, false ) ;                               // Write to TFT screen
       displayvolume() ;                                       // Show volume on display
       displaybattery() ;                                      // Show battery charge on display
     }
