@@ -23,10 +23,10 @@
 #define TFTSECS 4
 scrseg_struct     tftdata[TFTSECS] =                        // Screen divided in 3 segments + 1 overlay
 {                                                           // One text line is 8 pixels
-  { false, WHITE,   0,  8, "" },                            // 1 top line
-  { false, CYAN,   20, 64, "" },                            // 8 lines in the middle
-  { false, YELLOW, 90, 32, "" },                            // 4 lines at the bottom
-  { false, GREEN,  90, 32, "" }                             // 4 lines at the bottom for rotary encoder
+  { false, WHITE, 309,  8, "" },                            // 1 line - name and old clock
+  { false, CYAN,   24, 32, "" },                            // 4 lines - song/station detailed info
+  { false, YELLOW,  0, 24, "" },                            // 3 lines - station
+  { false, GREEN,  24, 32, "" }                             // 4 lines - mute/unmute/station select
 } ;
 
 
@@ -102,7 +102,7 @@ uint16_t x0 = 0, x1 = 0, yy0 = 0, yy1 = 0;
 #define TFT_RED   ILI9341_RED
 #define CLOCK_BEZEL_COLOR   ILI9341_MAROON
 #define TFT_BACKGROUND ILI9341_BLACK
-#define CLOCK_Y_OFFSET 70
+#define CLOCK_Y_OFFSET 56
 
 void initClock(){
   // Draw clock face

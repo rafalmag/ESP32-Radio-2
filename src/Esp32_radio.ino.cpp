@@ -148,7 +148,7 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 17 Apr 2019 00:01:00 GMT"
+#define VERSION     "Tue, 21 Apr 2019 00:01:00 GMT"
 // ESP32-Radio can be updated (OTA) to the latest version from a remote server.
 // The download uses the following server and files:
 // #define UPDATEHOST  "smallenburg.nl"                    // Host for software updates
@@ -234,6 +234,7 @@ void        playtask ( void * parameter ) ;       // Task to play the stream
 void        spftask ( void * parameter ) ;        // Task for special functions
 void        gettime() ;
 void        reservepin ( int8_t rpinnr ) ;
+void        statusTask( void * parameter);
 
 
 //**************************************************************************************************
@@ -359,6 +360,7 @@ WiFiClient        cmdclient ;                            // An instance of the c
 TaskHandle_t      maintask ;                             // Taskhandle for main task
 TaskHandle_t      xplaytask ;                            // Task handle for playtask
 TaskHandle_t      xspftask ;                             // Task handle for special functions
+TaskHandle_t      xstatustask ;                             // Task handle for special functions
 SemaphoreHandle_t SPIsem = NULL ;                        // For exclusive SPI usage
 hw_timer_t*       timer = NULL ;                         // For timer
 char              timetxt[9] ;                           // Converted timeinfo
@@ -1737,6 +1739,15 @@ void listNetworks()
   dbgprint ( "End of list" ) ;
 }
 
+int8_t rssiToStrength(int8_t rssiDb)
+{
+  if (rssiDb >= -50)
+    return 100;
+  else if (rssiDb <= -100)
+    return 0;
+  else
+    return 2 * (rssiDb + 100);
+}
 
 //**************************************************************************************************
 //                                          T I M E R 1 0 S E C                                    *
@@ -3717,6 +3728,14 @@ void setup()
     NULL,                                                 // parameter of the task
     1,                                                    // priority of the task
     &xspftask ) ;                                         // Task handle to keep track of created task
+
+    xTaskCreate (
+    statusTask,                                              // Task to handle status display
+    "StatusTask",                                            // name of task.
+    2048,                                                 // Stack size of task
+    NULL,                                                 // parameter of the task
+    1,                                                    // priority of the task (1 lowest)
+    &xstatustask ) ;                                         // Task handle to keep track of created task
 }
 
 
@@ -5500,10 +5519,10 @@ void displayinfo ( uint16_t inx )
   scrseg_struct* p = &tftdata[inx] ;
   uint16_t len ;                                           // Length of string, later buffer length
 
-  if ( inx == 0 )                                          // Topline is shorter
-  {
-    width += TIMEPOS ;                                     // Leave space for time
-  }
+  // if ( inx == 0 )                                          // Topline is shorter
+  // {
+  //   width += TIMEPOS ;                                     // Leave space for time
+  // }
   if ( tft )                                               // TFT active?
   {
     dsp_fillRect ( 0, p->y, width, p->height, BLACK ) ;    // Clear the space for new info
@@ -5729,3 +5748,20 @@ void spftask ( void * parameter )
   //vTaskDelete ( NULL ) ;                                          // Will never arrive here
 }
 
+void statusTask(void *parameter)
+{
+  static char statusString[180];
+  int av;
+  int wifiStrength;
+  while (true)
+  {
+    av = mp3client.available(); // Available in stream
+    wifiStrength = rssiToStrength(WiFi.RSSI());
+    sprintf(statusString, "Queue %d, Stream %d, Wifi %d %%",
+            uxQueueMessagesWaiting(dataqueue),
+            av,
+            wifiStrength);
+    tftset(0, statusString);
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for a short time
+  }
+}
