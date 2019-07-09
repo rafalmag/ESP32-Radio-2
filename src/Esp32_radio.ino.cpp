@@ -148,19 +148,21 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 05 Jan 2019 19:48:00 GMT"
+#define VERSION     "Tue, 21 Apr 2019 00:01:00 GMT"
 // ESP32-Radio can be updated (OTA) to the latest version from a remote server.
 // The download uses the following server and files:
-#define UPDATEHOST  "smallenburg.nl"                    // Host for software updates
-#define BINFILE     "/Arduino/Esp32_radio.ino.bin"      // Binary file name for update software
-#define TFTFILE     "/Arduino/ESP32-Radio.tft"          // Binary file name for update NEXTION image
+// #define UPDATEHOST  "smallenburg.nl"                    // Host for software updates
+// #define BINFILE     "/Arduino/Esp32_radio.ino.bin"      // Binary file name for update software
+// #define TFTFILE     "/Arduino/ESP32-Radio.tft"          // Binary file name for update NEXTION image
 //
 // Define (just one) type of display.  See documentation.
-#define BLUETFT                      // Works also for RED TFT 128x160
+// #define BLUETFT                      // Works also for RED TFT 128x160
 //#define OLED                         // 64x128 I2C OLED
 //#define DUMMYTFT                     // Dummy display
 //#define LCD1602I2C                   // LCD 1602 display with I2C backpack
-//#define ILI9341                      // ILI9341 240*320
+// #define ILI9341                      // ILI9341 320*240
+#define ILI9341_CLOCK                      // ILI9341 320*240 clock
+// #define ILI9341Horizontal                      // ILI9341 240*320
 //#define NEXTION                      // Nextion display. Uses UART 2 (pin 16 and 17)
 //
 #include <nvs.h>
@@ -182,7 +184,7 @@
 #include <Update.h>
 #include <base64.h>
 // Number of entries in the queue
-#define QSIZ 400
+#define QSIZ 800
 // Debug buffer size
 #define DEBUG_BUFFER_SIZE 150
 // Access point name if connection to WiFi network fails.  Also the hostname for WiFi and OTA.
@@ -190,7 +192,7 @@
 // Also used for other naming.
 #define NAME "ESP32Radio"
 // Maximum number of MQTT reconnects before give-up
-#define MAXMQTTCONNECTS 5
+// #define MAXMQTTCONNECTS 5
 // Adjust size of buffer to the longest expected string for nvsgetstr
 #define NVSBUFSIZE 150
 // Position (column) of time in topline relative to end
@@ -207,14 +209,15 @@
 // Subscription topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
 // by the the mqttprefix in the preferences.  The next definition will yield the topic
 // "ESP32Radio/command" if mqttprefix is "ESP32Radio".
-#define MQTT_SUBTOPIC     "command"           // Command to receive from MQTT
+// #define MQTT_SUBTOPIC     "command"           // Command to receive from MQTT
 //
-#define otaclient mp3client                   // OTA uses mp3client for connection to host
+// #define otaclient mp3client                   // OTA uses mp3client for connection to host
 
 //**************************************************************************************************
 // Forward declaration and prototypes of various functions.                                        *
 //**************************************************************************************************
-void        displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
+// void        displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
+void        displaytime2 ( tm* timeinfo, boolean redraw) ;
 void        showstreamtitle ( const char* ml, bool full = false ) ;
 void        handlebyte_ch ( uint8_t b ) ;
 void        handleFSf ( const String& pagename ) ;
@@ -231,6 +234,7 @@ void        playtask ( void * parameter ) ;       // Task to play the stream
 void        spftask ( void * parameter ) ;        // Task for special functions
 void        gettime() ;
 void        reservepin ( int8_t rpinnr ) ;
+void        statusTask( void * parameter);
 
 
 //**************************************************************************************************
@@ -256,11 +260,11 @@ struct qdata_struct
 
 struct ini_struct
 {
-  String         mqttbroker ;                         // The name of the MQTT broker server
-  String         mqttprefix ;                         // Prefix to use for topics
-  uint16_t       mqttport ;                           // Port, default 1883
-  String         mqttuser ;                           // User for MQTT authentication
-  String         mqttpasswd ;                         // Password for MQTT authentication
+  // String         mqttbroker ;                         // The name of the MQTT broker server
+  // String         mqttprefix ;                         // Prefix to use for topics
+  // uint16_t       mqttport ;                           // Port, default 1883
+  // String         mqttuser ;                           // User for MQTT authentication
+  // String         mqttpasswd ;                         // Password for MQTT authentication
   uint8_t        reqvol ;                             // Requested volume
   uint8_t        rtone[4] ;                           // Requested bass/treble settings
   int8_t         newpreset ;                          // Requested preset
@@ -332,9 +336,9 @@ struct keyname_t                                      // For keys in NVS
 // Items in ini_block can be changed by commands from webserver/MQTT/Serial.                       *
 //**************************************************************************************************
 
-enum display_t { T_UNDEFINED, T_BLUETFT, T_OLED,         // Various types of display
-                 T_DUMMYTFT, T_LCD1602I2C, T_ILI9341,
-                 T_NEXTION } ;
+// enum display_t { T_UNDEFINED, T_BLUETFT, T_OLED,         // Various types of display
+//                  T_DUMMYTFT, T_LCD1602I2C, T_ILI9341,
+//                  T_NEXTION } ;
 
 enum datamode_t { INIT = 1, HEADER = 2, DATA = 4,        // State for datastream
                   METADATA = 8, PLAYLISTINIT = 16,
@@ -350,12 +354,13 @@ ini_struct        ini_block ;                            // Holds configurable d
 WiFiServer        cmdserver ( 80 ) ;                     // Instance of embedded webserver, port 80
 WiFiClient        mp3client ;                            // An instance of the mp3 client, also used for OTA
 WiFiClient        cmdclient ;                            // An instance of the client for commands
-WiFiClient        wmqttclient ;                          // An instance for mqtt
-PubSubClient      mqttclient ( wmqttclient ) ;           // Client for MQTT subscriber
-HardwareSerial*   nxtserial = NULL ;                     // Serial port for NEXTION (if defined)
+// WiFiClient        wmqttclient ;                          // An instance for mqtt
+// PubSubClient      mqttclient ( wmqttclient ) ;           // Client for MQTT subscriber
+// HardwareSerial*   nxtserial = NULL ;                     // Serial port for NEXTION (if defined)
 TaskHandle_t      maintask ;                             // Taskhandle for main task
 TaskHandle_t      xplaytask ;                            // Task handle for playtask
 TaskHandle_t      xspftask ;                             // Task handle for special functions
+TaskHandle_t      xstatustask ;                             // Task handle for special functions
 SemaphoreHandle_t SPIsem = NULL ;                        // For exclusive SPI usage
 hw_timer_t*       timer = NULL ;                         // For timer
 char              timetxt[9] ;                           // Converted timeinfo
@@ -387,9 +392,9 @@ bool              muteflag = false ;                     // Mute output
 bool              resetreq = false ;                     // Request to reset the ESP32
 bool              updatereq = false ;                    // Request to update software from remote host
 bool              NetworkFound = false ;                 // True if WiFi network connected
-bool              mqtt_on = false ;                      // MQTT in use
+// bool              mqtt_on = false ;                      // MQTT in use
 String            networks ;                             // Found networks in the surrounding
-uint16_t          mqttcount = 0 ;                        // Counter MAXMQTTCONNECTS
+// uint16_t          mqttcount = 0 ;                        // Counter MAXMQTTCONNECTS
 int8_t            playingstat = 0 ;                      // 1 if radio is playing (for MQTT)
 int16_t           playlist_num = 0 ;                     // Nonzero for selection from playlist
 File              mp3file ;                              // File containing mp3 on SD card
@@ -400,9 +405,9 @@ int               chunkcount = 0 ;                       // Counter for chunked 
 String            http_getcmd ;                          // Contents of last GET command
 String            http_rqfile ;                          // Requested file
 bool              http_reponse_flag = false ;            // Response required
-uint16_t          ir_value = 0 ;                         // IR code
-uint32_t          ir_0 = 550 ;                           // Average duration of an IR short pulse
-uint32_t          ir_1 = 1650 ;                          // Average duration of an IR long pulse
+// uint16_t          ir_value = 0 ;                         // IR code
+// uint32_t          ir_0 = 550 ;                           // Average duration of an IR short pulse
+// uint32_t          ir_1 = 1650 ;                          // Average duration of an IR long pulse
 struct tm         timeinfo ;                             // Will be filled by NTP server
 bool              time_req = false ;                     // Set time requested
 bool              SD_okay = false ;                      // True if SD card in place and readable
@@ -415,7 +420,7 @@ uint32_t          max_mp3loop_time = 0 ;                 // To check max handlin
 int16_t           scanios ;                              // TEST*TEST*TEST
 int16_t           scaniocount ;                          // TEST*TEST*TEST
 uint16_t          bltimer = 0 ;                          // Backlight time-out counter
-display_t         displaytype = T_UNDEFINED ;            // Display type
+// display_t         displaytype = T_UNDEFINED ;            // Display type
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
@@ -435,6 +440,7 @@ sv bool           doubleclick = false ;                  // True if double click
 sv bool           tripleclick = false ;                  // True if triple click detected
 sv bool           longclick = false ;                    // True if longclick detected
 enum enc_menu_t { VOLUME, PRESET, TRACK } ;              // State for rotary encoder menu
+#define VOLUME_MULTIPLIER 10
 enc_menu_t        enc_menu_mode = VOLUME ;               // Default is VOLUME mode
 
 //
@@ -536,43 +542,43 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
 
 
 
-//**************************************************************************************************
-//                                     M Q T T P U B _ C L A S S                                   *
-//**************************************************************************************************
-// ID's for the items to publish to MQTT.  Is index in amqttpub[]
-enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
-       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
-     } ;
-enum { MQSTRING, MQINT8, MQINT16 } ;                     // Type of variable to publish
+// //**************************************************************************************************
+// //                                     M Q T T P U B _ C L A S S                                   *
+// //**************************************************************************************************
+// // ID's for the items to publish to MQTT.  Is index in amqttpub[]
+// enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
+//        MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
+//      } ;
+// enum { MQSTRING, MQINT8, MQINT16 } ;                     // Type of variable to publish
 
-class mqttpubc                                           // For MQTT publishing
-{
-    struct mqttpub_struct
-    {
-      const char*    topic ;                             // Topic as partial string (without prefix)
-      uint8_t        type ;                              // Type of payload
-      void*          payload ;                           // Payload for this topic
-      bool           topictrigger ;                      // Set to true to trigger MQTT publish
-    } ;
-    // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
-    // by the the mqttprefix in the preferences.
-  protected:
-    mqttpub_struct amqttpub[9] =                   // Definitions of various MQTT topic to publish
-    { // Index is equal to enum above
-      { "ip",              MQSTRING, &ipaddress,        false }, // Definition for MQTT_IP
-      { "icy/name",        MQSTRING, &icyname,          false }, // Definition for MQTT_ICYNAME
-      { "icy/streamtitle", MQSTRING, &icystreamtitle,   false }, // Definition for MQTT_STREAMTITLE
-      { "nowplaying",      MQSTRING, &ipaddress,        false }, // Definition for MQTT_NOWPLAYING
-      { "preset" ,         MQINT8,   &currentpreset,    false }, // Definition for MQTT_PRESET
-      { "volume" ,         MQINT8,   &ini_block.reqvol, false }, // Definition for MQTT_VOLUME
-      { "playing",         MQINT8,   &playingstat,      false }, // Definition for MQTT_PLAYING
-      { "playlist/pos",    MQINT16,  &playlist_num,     false }, // Definition for MQTT_PLAYLISTPOS
-      { NULL,              0,        NULL,              false }  // End of definitions
-    } ;
-  public:
-    void          trigger ( uint8_t item ) ;                      // Trigger publishig for one item
-    void          publishtopic() ;                                // Publish triggerer items
-} ;
+// class mqttpubc                                           // For MQTT publishing
+// {
+//     struct mqttpub_struct
+//     {
+//       const char*    topic ;                             // Topic as partial string (without prefix)
+//       uint8_t        type ;                              // Type of payload
+//       void*          payload ;                           // Payload for this topic
+//       bool           topictrigger ;                      // Set to true to trigger MQTT publish
+//     } ;
+//     // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
+//     // by the the mqttprefix in the preferences.
+//   protected:
+//     mqttpub_struct amqttpub[9] =                   // Definitions of various MQTT topic to publish
+//     { // Index is equal to enum above
+//       { "ip",              MQSTRING, &ipaddress,        false }, // Definition for MQTT_IP
+//       { "icy/name",        MQSTRING, &icyname,          false }, // Definition for MQTT_ICYNAME
+//       { "icy/streamtitle", MQSTRING, &icystreamtitle,   false }, // Definition for MQTT_STREAMTITLE
+//       { "nowplaying",      MQSTRING, &ipaddress,        false }, // Definition for MQTT_NOWPLAYING
+//       { "preset" ,         MQINT8,   &currentpreset,    false }, // Definition for MQTT_PRESET
+//       { "volume" ,         MQINT8,   &ini_block.reqvol, false }, // Definition for MQTT_VOLUME
+//       { "playing",         MQINT8,   &playingstat,      false }, // Definition for MQTT_PLAYING
+//       { "playlist/pos",    MQINT16,  &playlist_num,     false }, // Definition for MQTT_PLAYLISTPOS
+//       { NULL,              0,        NULL,              false }  // End of definitions
+//     } ;
+//   public:
+//     void          trigger ( uint8_t item ) ;                      // Trigger publishig for one item
+//     void          publishtopic() ;                                // Publish triggerer items
+// } ;
 
 
 //**************************************************************************************************
@@ -584,61 +590,61 @@ class mqttpubc                                           // For MQTT publishing
 //**************************************************************************************************
 // Set request for an item to publish to MQTT.                                                     *
 //**************************************************************************************************
-void mqttpubc::trigger ( uint8_t item )                    // Trigger publishig for one item
-{
-  amqttpub[item].topictrigger = true ;                     // Request re-publish for an item
-}
+// void mqttpubc::trigger ( uint8_t item )                    // Trigger publishig for one item
+// {
+//   amqttpub[item].topictrigger = true ;                     // Request re-publish for an item
+// }
 
-//**************************************************************************************************
-//                                     P U B L I S H T O P I C                                     *
-//**************************************************************************************************
-// Publish a topic to MQTT broker.                                                                 *
-//**************************************************************************************************
-void mqttpubc::publishtopic()
-{
-  int         i = 0 ;                                         // Loop control
-  char        topic[80] ;                                     // Topic to send
-  const char* payload ;                                       // Points to payload
-  char        intvar[10] ;                                    // Space for integer parameter
-  while ( amqttpub[i].topic )
-  {
-    if ( amqttpub[i].topictrigger )                           // Topic ready to send?
-    {
-      amqttpub[i].topictrigger = false ;                      // Success or not: clear trigger
-      sprintf ( topic, "%s/%s", ini_block.mqttprefix.c_str(),
-                amqttpub[i].topic ) ;                         // Add prefix to topic
-      switch ( amqttpub[i].type )                             // Select conversion method
-      {
-        case MQSTRING :
-          payload = ((String*)amqttpub[i].payload)->c_str() ;
-          //payload = pstr->c_str() ;                           // Get pointer to payload
-          break ;
-        case MQINT8 :
-          sprintf ( intvar, "%d",
-                    *(int8_t*)amqttpub[i].payload ) ;         // Convert to array of char
-          payload = intvar ;                                  // Point to this array
-          break ;
-        case MQINT16 :
-          sprintf ( intvar, "%d",
-                    *(int16_t*)amqttpub[i].payload ) ;        // Convert to array of char
-          payload = intvar ;                                  // Point to this array
-          break ;
-        default :
-          continue ;                                          // Unknown data type
-      }
-      dbgprint ( "Publish to topic %s : %s",                  // Show for debug
-                 topic, payload ) ;
-      if ( !mqttclient.publish ( topic, payload ) )           // Publish!
-      {
-        dbgprint ( "MQTT publish failed!" ) ;                 // Failed
-      }
-      return ;                                                // Do the rest later
-    }
-    i++ ;                                                     // Next entry
-  }
-}
+// //**************************************************************************************************
+// //                                     P U B L I S H T O P I C                                     *
+// //**************************************************************************************************
+// // Publish a topic to MQTT broker.                                                                 *
+// //**************************************************************************************************
+// void mqttpubc::publishtopic()
+// {
+//   int         i = 0 ;                                         // Loop control
+//   char        topic[80] ;                                     // Topic to send
+//   const char* payload ;                                       // Points to payload
+//   char        intvar[10] ;                                    // Space for integer parameter
+//   while ( amqttpub[i].topic )
+//   {
+//     if ( amqttpub[i].topictrigger )                           // Topic ready to send?
+//     {
+//       amqttpub[i].topictrigger = false ;                      // Success or not: clear trigger
+//       sprintf ( topic, "%s/%s", ini_block.mqttprefix.c_str(),
+//                 amqttpub[i].topic ) ;                         // Add prefix to topic
+//       switch ( amqttpub[i].type )                             // Select conversion method
+//       {
+//         case MQSTRING :
+//           payload = ((String*)amqttpub[i].payload)->c_str() ;
+//           //payload = pstr->c_str() ;                           // Get pointer to payload
+//           break ;
+//         case MQINT8 :
+//           sprintf ( intvar, "%d",
+//                     *(int8_t*)amqttpub[i].payload ) ;         // Convert to array of char
+//           payload = intvar ;                                  // Point to this array
+//           break ;
+//         case MQINT16 :
+//           sprintf ( intvar, "%d",
+//                     *(int16_t*)amqttpub[i].payload ) ;        // Convert to array of char
+//           payload = intvar ;                                  // Point to this array
+//           break ;
+//         default :
+//           continue ;                                          // Unknown data type
+//       }
+//       dbgprint ( "Publish to topic %s : %s",                  // Show for debug
+//                  topic, payload ) ;
+//       if ( !mqttclient.publish ( topic, payload ) )           // Publish!
+//       {
+//         dbgprint ( "MQTT publish failed!" ) ;                 // Failed
+//       }
+//       return ;                                                // Do the rest later
+//     }
+//     i++ ;                                                     // Next entry
+//   }
+// }
 
-mqttpubc         mqttpub ;                                    // Instance for mqttpubc
+// mqttpubc         mqttpub ;                                    // Instance for mqttpubc
 
 
 //
@@ -1067,7 +1073,7 @@ VS1053* vs1053player ;
 #include "bluetft.h"                                     // For ILI9163C or ST7735S 128x160 display
 #endif
 #ifdef ILI9341
-#include "ILI9341.h"                                     // For ILI9341 320x240 display
+#include "ILI9341.h"                                     // For ILI9341 240x320 display (vertical)
 #endif
 #ifdef OLED
 #include "SSD1306.h"                                     // For OLED I2C SD1306 64x128 display
@@ -1080,6 +1086,12 @@ VS1053* vs1053player ;
 #endif
 #ifdef NEXTION
 #include "NEXTION.h"                                     // For NEXTION display
+#endif
+#ifdef ILI9341Horizontal
+#include "ILI9341horizontal.h"                           // For ILI9341 320x240 display
+#endif
+#ifdef ILI9341_CLOCK
+#include "ILI9341-clock.h"                           // For ILI9341 320x240 display with clock
 #endif
 
 
@@ -1403,6 +1415,7 @@ char* dbgprint ( const char* format, ... )
   va_end ( varArgs ) ;                                 // End of using parameters
   if ( DEBUG )                                         // DEBUG on?
   {
+    Serial.print ( millis() ) ;                           // Yes, print prefix
     Serial.print ( "D: " ) ;                           // Yes, print prefix
     Serial.println ( sbuf ) ;                          // and the info
   }
@@ -1726,6 +1739,15 @@ void listNetworks()
   dbgprint ( "End of list" ) ;
 }
 
+int8_t rssiToStrength(int8_t rssiDb)
+{
+  if (rssiDb >= -50)
+    return 100;
+  else if (rssiDb <= -100)
+    return 0;
+  else
+    return 2 * (rssiDb + 100);
+}
 
 //**************************************************************************************************
 //                                          T I M E R 1 0 S E C                                    *
@@ -1856,57 +1878,57 @@ void IRAM_ATTR timer100()
 }
 
 
-//**************************************************************************************************
-//                                          I S R _ I R                                            *
-//**************************************************************************************************
-// Interrupts received from VS1838B on every change of the signal.                                 *
-// Intervals are 640 or 1640 microseconds for data.  syncpulses are 3400 micros or longer.         *
-// Input is complete after 65 level changes.                                                       *
-// Only the last 32 level changes are significant and will be handed over to common data.          *
-//**************************************************************************************************
-void IRAM_ATTR isr_IR()
-{
-  sv uint32_t      t0 = 0 ;                          // To get the interval
-  sv uint32_t      ir_locvalue = 0 ;                 // IR code
-  sv int           ir_loccount = 0 ;                 // Length of code
-  uint32_t         t1, intval ;                      // Current time and interval since last change
-  uint32_t         mask_in = 2 ;                     // Mask input for conversion
-  uint16_t         mask_out = 1 ;                    // Mask output for conversion
+// //**************************************************************************************************
+// //                                          I S R _ I R                                            *
+// //**************************************************************************************************
+// // Interrupts received from VS1838B on every change of the signal.                                 *
+// // Intervals are 640 or 1640 microseconds for data.  syncpulses are 3400 micros or longer.         *
+// // Input is complete after 65 level changes.                                                       *
+// // Only the last 32 level changes are significant and will be handed over to common data.          *
+// //**************************************************************************************************
+// void IRAM_ATTR isr_IR()
+// {
+//   sv uint32_t      t0 = 0 ;                          // To get the interval
+//   sv uint32_t      ir_locvalue = 0 ;                 // IR code
+//   sv int           ir_loccount = 0 ;                 // Length of code
+//   uint32_t         t1, intval ;                      // Current time and interval since last change
+//   uint32_t         mask_in = 2 ;                     // Mask input for conversion
+//   uint16_t         mask_out = 1 ;                    // Mask output for conversion
 
-  t1 = micros() ;                                    // Get current time
-  intval = t1 - t0 ;                                 // Compute interval
-  t0 = t1 ;                                          // Save for next compare
-  if ( ( intval > 300 ) && ( intval < 800 ) )        // Short pulse?
-  {
-    ir_locvalue = ir_locvalue << 1 ;                 // Shift in a "zero" bit
-    ir_loccount++ ;                                  // Count number of received bits
-    ir_0 = ( ir_0 * 3 + intval ) / 4 ;               // Compute average durartion of a short pulse
-  }
-  else if ( ( intval > 1400 ) && ( intval < 1900 ) ) // Long pulse?
-  {
-    ir_locvalue = ( ir_locvalue << 1 ) + 1 ;         // Shift in a "one" bit
-    ir_loccount++ ;                                  // Count number of received bits
-    ir_1 = ( ir_1 * 3 + intval ) / 4 ;               // Compute average durartion of a short pulse
-  }
-  else if ( ir_loccount == 65 )                      // Value is correct after 65 level changes
-  {
-    while ( mask_in )                                // Convert 32 bits to 16 bits
-    {
-      if ( ir_locvalue & mask_in )                   // Bit set in pattern?
-      {
-        ir_value |= mask_out ;                       // Set set bit in result
-      }
-      mask_in <<= 2 ;                                // Shift input mask 2 positions
-      mask_out <<= 1 ;                               // Shift output mask 1 position
-    }
-    ir_loccount = 0 ;                                // Ready for next input
-  }
-  else
-  {
-    ir_locvalue = 0 ;                                // Reset decoding
-    ir_loccount = 0 ;
-  }
-}
+//   t1 = micros() ;                                    // Get current time
+//   intval = t1 - t0 ;                                 // Compute interval
+//   t0 = t1 ;                                          // Save for next compare
+//   if ( ( intval > 300 ) && ( intval < 800 ) )        // Short pulse?
+//   {
+//     ir_locvalue = ir_locvalue << 1 ;                 // Shift in a "zero" bit
+//     ir_loccount++ ;                                  // Count number of received bits
+//     ir_0 = ( ir_0 * 3 + intval ) / 4 ;               // Compute average durartion of a short pulse
+//   }
+//   else if ( ( intval > 1400 ) && ( intval < 1900 ) ) // Long pulse?
+//   {
+//     ir_locvalue = ( ir_locvalue << 1 ) + 1 ;         // Shift in a "one" bit
+//     ir_loccount++ ;                                  // Count number of received bits
+//     ir_1 = ( ir_1 * 3 + intval ) / 4 ;               // Compute average durartion of a short pulse
+//   }
+//   else if ( ir_loccount == 65 )                      // Value is correct after 65 level changes
+//   {
+//     while ( mask_in )                                // Convert 32 bits to 16 bits
+//     {
+//       if ( ir_locvalue & mask_in )                   // Bit set in pattern?
+//       {
+//         ir_value |= mask_out ;                       // Set set bit in result
+//       }
+//       mask_in <<= 2 ;                                // Shift input mask 2 positions
+//       mask_out <<= 1 ;                               // Shift output mask 1 position
+//     }
+//     ir_loccount = 0 ;                                // Ready for next input
+//   }
+//   else
+//   {
+//     ir_locvalue = 0 ;                                // Reset decoding
+//     ir_loccount = 0 ;
+//   }
+// }
 
 
 //**************************************************************************************************
@@ -2053,15 +2075,15 @@ void showstreamtitle ( const char *ml, bool full )
   if ( ( p1 = strstr ( streamtitle, " - " ) ) ) // look for artist/title separator
   {
     p2 = p1 + 3 ;                               // 2nd part of text at this position
-    if ( displaytype == T_NEXTION )
-    {
-      *p1++ = '\\' ;                            // Found: replace 3 characters by "\r"
-      *p1++ = 'r' ;                             // Found: replace 3 characters by "\r"
-    }
-    else
-    {
+    // if ( displaytype == T_NEXTION )
+    // {
+    //   *p1++ = '\\' ;                            // Found: replace 3 characters by "\r"
+    //   *p1++ = 'r' ;                             // Found: replace 3 characters by "\r"
+    // }
+    // else
+    // {
       *p1++ = '\n' ;                            // Found: replace 3 characters by newline
-    }
+    // }
     if ( *p2 == ' ' )                           // Leading space in title?
     {
       p2++ ;
@@ -2108,7 +2130,7 @@ bool connecttohost()
   stop_mp3client() ;                                // Disconnect if still connected
   dbgprint ( "Connect to new host %s", host.c_str() ) ;
   tftset ( 0, "ESP32-Radio" ) ;                     // Set screen segment text top line
-  displaytime ( "" ) ;                              // Clear time on TFT screen
+  displaytime2 ( &timeinfo, true ) ;                              // Clear time on TFT screen
   datamode = INIT ;                                 // Start default in metamode
   chunked = false ;                                 // Assume not chunked
   if ( host.endsWith ( ".m3u" ) )                   // Is it an m3u playlist?
@@ -2265,14 +2287,14 @@ void handle_ID3 ( String &path )
            ( strncmp ( ID3tag.tagid, "TPE1", 4 ) == 0 ) )   // or artist?
       {
         albttl += String ( metalinebf + 1 ) ;               // Yes, add to string
-        if ( displaytype == T_NEXTION )                     // NEXTION display?
-        {
-          albttl += String ( "\\r" ) ;                      // Add code for newline (2 characters)
-        }
-        else
-        {
+        // if ( displaytype == T_NEXTION )                     // NEXTION display?
+        // {
+        //   albttl += String ( "\\r" ) ;                      // Add code for newline (2 characters)
+        // }
+        // else
+        // {
           albttl += String ( "\n" ) ;                       // Add newline (1 character)
-        }
+        // }
       }
       if ( strncmp ( ID3tag.tagid, "TIT2", 4 ) == 0 )       // Songtitle?
       {
@@ -2296,7 +2318,7 @@ bool connecttofile()
   String path ;                                           // Full file spec
 
   tftset ( 0, "ESP32 MP3 Player" ) ;                      // Set screen segment top line
-  displaytime ( "" ) ;                                    // Clear time on TFT screen
+  displaytime2 ( &timeinfo, true ) ;                     // Clear time on TFT screen
   path = host.substring ( 9 ) ;                           // Path, skip the "localhost" part
   claimSPI ( "sdopen3" ) ;                                // Claim SPI bus
   handle_ID3 ( path ) ;                                   // See if there are ID3 tags in this file
@@ -2307,7 +2329,7 @@ bool connecttofile()
     dbgprint ( "Error opening file %s", path.c_str() ) ;  // No luck
     return false ;
   }
-  mqttpub.trigger ( MQTT_STREAMTITLE ) ;                  // Request publishing to MQTT
+  // mqttpub.trigger ( MQTT_STREAMTITLE ) ;                  // Request publishing to MQTT
   icyname = "" ;                                          // No icy name yet
   chunked = false ;                                       // File not chunked
   metaint = 0 ;                                           // No metadata
@@ -2368,231 +2390,233 @@ bool connectwifi()
     pfs = dbgprint ( "IP = %s", ipaddress.c_str() ) ;   // String to dispay on TFT
   }
   tftlog ( pfs ) ;                                      // Show IP
-  delay ( 3000 ) ;                                      // Allow user to read this
-  tftlog ( "\f" ) ;                                     // Select new page if NEXTION 
+  delay ( 100 ) ;                                      // Allow user to read this
+  // tftlog ( "\f" ) ;                                     // Select new page if NEXTION 
   return ( localAP == false ) ;                         // Return result of connection
 }
 
 
-//**************************************************************************************************
-//                                           O T A S T A R T                                       *
-//**************************************************************************************************
-// Update via WiFi has been started by Arduino IDE or update request.                              *
-//**************************************************************************************************
-void otastart()
-{
-  char* p ;
+// //**************************************************************************************************
+// //                                           O T A S T A R T                                       *
+// //**************************************************************************************************
+// // Update via WiFi has been started by Arduino IDE or update request.                              *
+// //**************************************************************************************************
+// void otastart()
+// {
+//   char* p ;
 
-  p = dbgprint ( "OTA update Started" ) ;
-  tftset ( 2, p ) ;                                   // Set screen segment bottom part
-}
-
-
-//**************************************************************************************************
-//                                D O _ N E X T I O N _ U P D A T E                                *
-//**************************************************************************************************
-// Update NEXTION image from OTA stream.                                                           *
-//**************************************************************************************************
-bool do_nextion_update ( uint32_t clength )
-{
-  bool     res = false ;                                       // Update result
-  uint32_t k ;
-  int      c ;                                                 // Reply from NEXTION
-
-  if ( nxtserial )                                             // NEXTION active?
-  {
-    vTaskDelete ( xspftask ) ;                                 // Prevent output to NEXTION
-    delay ( 1000 ) ;
-    nxtserial->printf ( "\xFF\xFF\xFF" ) ;                     // Empty command
-    for ( int i = 0 ; i < 100 ; i++ )                          // Any input seen?
-    {
-      if ( nxtserial->available() )
-      {
-        c =  nxtserial->read() ;                               // Read garbage
-      }
-      delay ( 20 ) ;
-    }
-    nxtserial->printf ( "whmi-wri %d,9600,0\xFF\xFF\xFF",      // Start upload
-                        clength ) ;
-    while ( !nxtserial->available() )                          // Any input seen?
-    {
-      delay ( 20 ) ;
-    }
-    c =  nxtserial->read() ;                                   // Yes, read the 0x05 ACK
-    while ( clength )                                          // Loop for the transfer
-    {
-      k = clength ;
-      if ( k > 4096 )
-      {
-        k = 4096 ;
-      }
-      k = otaclient.read ( tmpbuff, k ) ;                      // Read a number of bytes from the stream
-      dbgprint ( "TFT file, read %d bytes", k ) ;
-      nxtserial->write ( tmpbuff, k ) ;     
-      while ( !nxtserial->available() )                        // Any input seen?
-      {
-        delay ( 20 ) ;
-      }
-      c =  (char)nxtserial->read() ;                           // Yes, read the 0x05 ACK
-      if ( c != 0x05 )
-      {
-        break ;
-      }
-      clength -= k ;
-    }
-    otaclient.flush() ;
-    if ( clength == 0 )
-    {
-      dbgprint ( "Update successfully completed" ) ;
-      res = true ;
-    }
-  }
-  return res ;
-}
+//   p = dbgprint ( "OTA update Started" ) ;
+//   tftset ( 2, p ) ;                                   // Set screen segment bottom part
+// }
 
 
-//**************************************************************************************************
-//                                D O _ S O F T W A R E _ U P D A T E                              *
-//**************************************************************************************************
-// Update software from OTA stream.                                                                *
-//**************************************************************************************************
-bool do_software_update ( uint32_t clength )
-{
-  bool res = false ;                                          // Update result
+// //**************************************************************************************************
+// //                                D O _ N E X T I O N _ U P D A T E                                *
+// //**************************************************************************************************
+// // Update NEXTION image from OTA stream.                                                           *
+// //**************************************************************************************************
+// bool do_nextion_update ( uint32_t clength )
+// {
+//   bool     res = false ;                                       // Update result
+//   uint32_t k ;
+//   int      c ;                                                 // Reply from NEXTION
+
+//   if ( nxtserial )                                             // NEXTION active?
+//   {
+//     vTaskDelete ( xspftask ) ;                                 // Prevent output to NEXTION
+//     delay ( 1000 ) ;
+//     nxtserial->printf ( "\xFF\xFF\xFF" ) ;                     // Empty command
+//     for ( int i = 0 ; i < 100 ; i++ )                          // Any input seen?
+//     {
+//       if ( nxtserial->available() )
+//       {
+//         c =  nxtserial->read() ;                               // Read garbage
+//       }
+//       delay ( 20 ) ;
+//     }
+//     nxtserial->printf ( "whmi-wri %d,9600,0\xFF\xFF\xFF",      // Start upload
+//                         clength ) ;
+//     while ( !nxtserial->available() )                          // Any input seen?
+//     {
+//       delay ( 20 ) ;
+//     }
+//     c =  nxtserial->read() ;                                   // Yes, read the 0x05 ACK
+//     while ( clength )                                          // Loop for the transfer
+//     {
+//       k = clength ;
+//       if ( k > 4096 )
+//       {
+//         k = 4096 ;
+//       }
+//       k = otaclient.read ( tmpbuff, k ) ;                      // Read a number of bytes from the stream
+//       dbgprint ( "TFT file, read %d bytes", k ) ;
+//       nxtserial->write ( tmpbuff, k ) ;     
+//       while ( !nxtserial->available() )                        // Any input seen?
+//       {
+//         delay ( 20 ) ;
+//       }
+//       c =  (char)nxtserial->read() ;                           // Yes, read the 0x05 ACK
+//       if ( c != 0x05 )
+//       {
+//         break ;
+//       }
+//       clength -= k ;
+//     }
+//     otaclient.flush() ;
+//     if ( clength == 0 )
+//     {
+//       dbgprint ( "Update successfully completed" ) ;
+//       res = true ;
+//     }
+//   }
+//   return res ;
+// }
+
+
+// //**************************************************************************************************
+// //                                D O _ S O F T W A R E _ U P D A T E                              *
+// //**************************************************************************************************
+// // Update software from OTA stream.                                                                *
+// //**************************************************************************************************
+// bool do_software_update ( uint32_t clength )
+// {
+//   bool res = false ;                                          // Update result
   
-  if ( Update.begin ( clength ) )                             // Update possible?
-  {
-    dbgprint ( "Begin OTA update, length is %d",
-               clength ) ;
-    if ( Update.writeStream ( otaclient ) == clength )        // writeStream is the real download
-    {
-      dbgprint ( "Written %d bytes successfully", clength ) ;
-    }
-    else
-    {
-      dbgprint ( "Write failed!" ) ;
-    }
-    if ( Update.end() )                                       // Check for successful flash
-    {
-      dbgprint( "OTA done" ) ;
-      if ( Update.isFinished() )
-      {
-        dbgprint ( "Update successfully completed" ) ;
-        res = true ;                                          // Positive result
-      }
-      else
-      {
-        dbgprint ( "Update not finished!" ) ;
-      }
-    }
-    else
-    {
-      dbgprint ( "Error Occurred. Error %s", Update.getError() ) ;
-    }
-  }
-  else
-  {
-    // Not enough space to begin OTA
-    dbgprint ( "Not enough space to begin OTA" ) ;
-    otaclient.flush() ;
-  }
-  return res ;
-}
+//   if ( Update.begin ( clength ) )                             // Update possible?
+//   {
+//     dbgprint ( "Begin OTA update, length is %d",
+//                clength ) ;
+//     if ( Update.writeStream ( otaclient ) == clength )        // writeStream is the real download
+//     {
+//       dbgprint ( "Written %d bytes successfully", clength ) ;
+//     }
+//     else
+//     {
+//       dbgprint ( "Write failed!" ) ;
+//     }
+//     if ( Update.end() )                                       // Check for successful flash
+//     {
+//       dbgprint( "OTA done" ) ;
+//       if ( Update.isFinished() )
+//       {
+//         dbgprint ( "Update successfully completed" ) ;
+//         res = true ;                                          // Positive result
+//       }
+//       else
+//       {
+//         dbgprint ( "Update not finished!" ) ;
+//       }
+//     }
+//     else
+//     {
+//       dbgprint ( "Error Occurred. Error %s", Update.getError() ) ;
+//     }
+//   }
+//   else
+//   {
+//     // Not enough space to begin OTA
+//     dbgprint ( "Not enough space to begin OTA" ) ;
+//     otaclient.flush() ;
+//   }
+//   return res ;
+// }
 
+// to avoid forward reference
+void scan_content_length ( const char* metalinebf );
 
-//**************************************************************************************************
-//                                        U P D A T E _ S O F T W A R E                            *
-//**************************************************************************************************
-// Update software by download from remote host.                                                   *
-//**************************************************************************************************
-void update_software ( const char* lstmodkey, const char* updatehost, const char* binfile )
-{
-  uint32_t    timeout = millis() ;                              // To detect time-out
-  String      line ;                                            // Input header line
-  String      lstmod = "" ;                                     // Last modified timestamp in NVS
-  String      newlstmod ;                                       // Last modified from host
+// //**************************************************************************************************
+// //                                        U P D A T E _ S O F T W A R E                            *
+// //**************************************************************************************************
+// // Update software by download from remote host.                                                   *
+// //**************************************************************************************************
+// void update_software ( const char* lstmodkey, const char* updatehost, const char* binfile )
+// {
+//   uint32_t    timeout = millis() ;                              // To detect time-out
+//   String      line ;                                            // Input header line
+//   String      lstmod = "" ;                                     // Last modified timestamp in NVS
+//   String      newlstmod ;                                       // Last modified from host
   
-  updatereq = false ;                                           // Clear update flag
-  otastart() ;                                                  // Show something on screen
-  stop_mp3client () ;                                           // Stop input stream
-  lstmod = nvsgetstr ( lstmodkey ) ;                            // Get current last modified timestamp
-  dbgprint ( "Connecting to %s for %s",
-              updatehost, binfile ) ;
-  if ( !otaclient.connect ( updatehost, 80 ) )                  // Connect to host
-  {
-    dbgprint ( "Connect to updatehost failed!" ) ;
-    return ;
-  }
-  otaclient.printf ( "GET %s HTTP/1.1\r\n"
-                     "Host: %s\r\n"
-                     "Cache-Control: no-cache\r\n"
-                     "Connection: close\r\n\r\n",
-                     binfile,
-                     updatehost ) ;
-  while ( otaclient.available() == 0 )                          // Wait until response appears
-  {
-    if ( millis() - timeout > 5000 )
-    {
-      dbgprint ( "Connect to Update host Timeout!" ) ;
-      otaclient.stop() ;
-      return ;
-    }
-  }
-  // Connected, handle response
-  while ( otaclient.available() )
-  {
-    line = otaclient.readStringUntil ( '\n' ) ;                 // Read a line from response
-    line.trim() ;                                               // Remove garbage
-    dbgprint ( line.c_str() ) ;                                 // Debug info
-    if ( !line.length() )                                       // End of headers?
-    {
-      break ;                                                   // Yes, get the OTA started
-    }
-    // Check if the HTTP Response is 200.  Any other response is an error.
-    if ( line.startsWith ( "HTTP/1.1" ) )                       // 
-    {
-      if ( line.indexOf ( " 200 " ) < 0 )
-      {
-        dbgprint ( "Got a non 200 status code from server!" ) ;
-        return ;
-      }
-    }
-    scan_content_length ( line.c_str() ) ;                      // Scan for content_length
-    if ( line.startsWith ( "Last-Modified: " ) )                // Timestamp of binary file
-    {
-      newlstmod = line.substring ( 15 ) ;                       // Isolate timestamp
-    }
-  }
-  // End of headers reached
-  if ( newlstmod == lstmod )                                    // Need for update?
-  {
-    dbgprint ( "No new version available" ) ;                   // No, show reason
-    otaclient.flush() ;
-    return ;    
-  }
-  if ( clength > 0 )
-  {
-    if ( strstr ( binfile, ".bin" ) )                           // Update of the sketch?
-    {
-      if ( do_software_update ( clength ) )                     // Flash updated sketch
-      {
-        nvssetstr ( lstmodkey, newlstmod ) ;                    // Update Last Modified in NVS
-      }
-    }
-    if ( strstr ( binfile, ".tft" ) )                           // Update of the NEXTION image?
-    {
-      if ( do_nextion_update ( clength ) )                      // Flash updated NEXTION
-      {
-        nvssetstr ( lstmodkey, newlstmod ) ;                    // Update Last Modified in NVS
-      }
-    }
-  }
-  else
-  {
-    dbgprint ( "There was no content in the response" ) ;
-    otaclient.flush() ;
-  }
-}
+//   updatereq = false ;                                           // Clear update flag
+//   otastart() ;                                                  // Show something on screen
+//   stop_mp3client () ;                                           // Stop input stream
+//   lstmod = nvsgetstr ( lstmodkey ) ;                            // Get current last modified timestamp
+//   dbgprint ( "Connecting to %s for %s",
+//               updatehost, binfile ) ;
+//   if ( !otaclient.connect ( updatehost, 80 ) )                  // Connect to host
+//   {
+//     dbgprint ( "Connect to updatehost failed!" ) ;
+//     return ;
+//   }
+//   otaclient.printf ( "GET %s HTTP/1.1\r\n"
+//                      "Host: %s\r\n"
+//                      "Cache-Control: no-cache\r\n"
+//                      "Connection: close\r\n\r\n",
+//                      binfile,
+//                      updatehost ) ;
+//   while ( otaclient.available() == 0 )                          // Wait until response appears
+//   {
+//     if ( millis() - timeout > 5000 )
+//     {
+//       dbgprint ( "Connect to Update host Timeout!" ) ;
+//       otaclient.stop() ;
+//       return ;
+//     }
+//   }
+//   // Connected, handle response
+//   while ( otaclient.available() )
+//   {
+//     line = otaclient.readStringUntil ( '\n' ) ;                 // Read a line from response
+//     line.trim() ;                                               // Remove garbage
+//     dbgprint ( line.c_str() ) ;                                 // Debug info
+//     if ( !line.length() )                                       // End of headers?
+//     {
+//       break ;                                                   // Yes, get the OTA started
+//     }
+//     // Check if the HTTP Response is 200.  Any other response is an error.
+//     if ( line.startsWith ( "HTTP/1.1" ) )                       // 
+//     {
+//       if ( line.indexOf ( " 200 " ) < 0 )
+//       {
+//         dbgprint ( "Got a non 200 status code from server!" ) ;
+//         return ;
+//       }
+//     }
+//     scan_content_length ( line.c_str() ) ;                      // Scan for content_length
+//     if ( line.startsWith ( "Last-Modified: " ) )                // Timestamp of binary file
+//     {
+//       newlstmod = line.substring ( 15 ) ;                       // Isolate timestamp
+//     }
+//   }
+//   // End of headers reached
+//   if ( newlstmod == lstmod )                                    // Need for update?
+//   {
+//     dbgprint ( "No new version available" ) ;                   // No, show reason
+//     otaclient.flush() ;
+//     return ;    
+//   }
+//   if ( clength > 0 )
+//   {
+//     if ( strstr ( binfile, ".bin" ) )                           // Update of the sketch?
+//     {
+//       if ( do_software_update ( clength ) )                     // Flash updated sketch
+//       {
+//         nvssetstr ( lstmodkey, newlstmod ) ;                    // Update Last Modified in NVS
+//       }
+//     }
+//     if ( strstr ( binfile, ".tft" ) )                           // Update of the NEXTION image?
+//     {
+//       if ( do_nextion_update ( clength ) )                      // Flash updated NEXTION
+//       {
+//         nvssetstr ( lstmodkey, newlstmod ) ;                    // Update Last Modified in NVS
+//       }
+//     }
+//   }
+//   else
+//   {
+//     dbgprint ( "There was no content in the response" ) ;
+//     otaclient.flush() ;
+//   }
+// }
 
 
 //**************************************************************************************************
@@ -2843,10 +2867,10 @@ String readprefs ( bool output )
       cmd = String ( "" ) ;                                 // Do not analyze this
       
     }
-    else if ( strstr ( key, "mqttpasswd"  ) )               // Is it a MQTT password?
-    {
-      val = String ( "*******" ) ;                          // Yes, hide it
-    }
+    // else if ( strstr ( key, "mqttpasswd"  ) )               // Is it a MQTT password?
+    // {
+    //   val = String ( "*******" ) ;                          // Yes, hide it
+    // }
     if ( output )
     {
       if ( ( i > 0 ) &&
@@ -2875,84 +2899,84 @@ String readprefs ( bool output )
 }
 
 
-//**************************************************************************************************
-//                                    M Q T T R E C O N N E C T                                    *
-//**************************************************************************************************
-// Reconnect to broker.                                                                            *
-//**************************************************************************************************
-bool mqttreconnect()
-{
-  static uint32_t retrytime = 0 ;                         // Limit reconnect interval
-  bool            res = false ;                           // Connect result
-  char            clientid[20] ;                          // Client ID
-  char            subtopic[60] ;                          // Topic to subscribe
+// //**************************************************************************************************
+// //                                    M Q T T R E C O N N E C T                                    *
+// //**************************************************************************************************
+// // Reconnect to broker.                                                                            *
+// //**************************************************************************************************
+// bool mqttreconnect()
+// {
+//   static uint32_t retrytime = 0 ;                         // Limit reconnect interval
+//   bool            res = false ;                           // Connect result
+//   char            clientid[20] ;                          // Client ID
+//   char            subtopic[60] ;                          // Topic to subscribe
 
-  if ( ( millis() - retrytime ) < 5000 )                  // Don't try to frequently
-  {
-    return res ;
-  }
-  retrytime = millis() ;                                  // Set time of last try
-  if ( mqttcount > MAXMQTTCONNECTS )                      // Tried too much?
-  {
-    mqtt_on = false ;                                     // Yes, switch off forever
-    return res ;                                          // and quit
-  }
-  mqttcount++ ;                                           // Count the retries
-  dbgprint ( "(Re)connecting number %d to MQTT %s",       // Show some debug info
-             mqttcount,
-             ini_block.mqttbroker.c_str() ) ;
-  sprintf ( clientid, "%s-%04d",                          // Generate client ID
-            NAME, (int) random ( 10000 ) % 10000 ) ;
-  res = mqttclient.connect ( clientid,                    // Connect to broker
-                             ini_block.mqttuser.c_str(),
-                             ini_block.mqttpasswd.c_str()
-                           ) ;
-  if ( res )
-  {
-    sprintf ( subtopic, "%s/%s",                          // Add prefix to subtopic
-              ini_block.mqttprefix.c_str(),
-              MQTT_SUBTOPIC ) ;
-    res = mqttclient.subscribe ( subtopic ) ;             // Subscribe to MQTT
-    if ( !res )
-    {
-      dbgprint ( "MQTT subscribe failed!" ) ;             // Failure
-    }
-    mqttpub.trigger ( MQTT_IP ) ;                         // Publish own IP
-  }
-  else
-  {
-    dbgprint ( "MQTT connection failed, rc=%d",
-               mqttclient.state() ) ;
+//   if ( ( millis() - retrytime ) < 5000 )                  // Don't try to frequently
+//   {
+//     return res ;
+//   }
+//   retrytime = millis() ;                                  // Set time of last try
+//   if ( mqttcount > MAXMQTTCONNECTS )                      // Tried too much?
+//   {
+//     mqtt_on = false ;                                     // Yes, switch off forever
+//     return res ;                                          // and quit
+//   }
+//   mqttcount++ ;                                           // Count the retries
+//   dbgprint ( "(Re)connecting number %d to MQTT %s",       // Show some debug info
+//              mqttcount,
+//              ini_block.mqttbroker.c_str() ) ;
+//   sprintf ( clientid, "%s-%04d",                          // Generate client ID
+//             NAME, (int) random ( 10000 ) % 10000 ) ;
+//   res = mqttclient.connect ( clientid,                    // Connect to broker
+//                              ini_block.mqttuser.c_str(),
+//                              ini_block.mqttpasswd.c_str()
+//                            ) ;
+//   if ( res )
+//   {
+//     sprintf ( subtopic, "%s/%s",                          // Add prefix to subtopic
+//               ini_block.mqttprefix.c_str(),
+//               MQTT_SUBTOPIC ) ;
+//     res = mqttclient.subscribe ( subtopic ) ;             // Subscribe to MQTT
+//     if ( !res )
+//     {
+//       dbgprint ( "MQTT subscribe failed!" ) ;             // Failure
+//     }
+//     mqttpub.trigger ( MQTT_IP ) ;                         // Publish own IP
+//   }
+//   else
+//   {
+//     dbgprint ( "MQTT connection failed, rc=%d",
+//                mqttclient.state() ) ;
 
-  }
-  return res ;
-}
+//   }
+//   return res ;
+// }
 
 
-//**************************************************************************************************
-//                                    O N M Q T T M E S S A G E                                    *
-//**************************************************************************************************
-// Executed when a subscribed message is received.                                                 *
-// Note that message is not delimited by a '\0'.                                                   *
-// Note that cmd buffer is shared with serial input.                                               *
-//**************************************************************************************************
-void onMqttMessage ( char* topic, byte* payload, unsigned int len )
-{
-  const char*  reply ;                                // Result from analyzeCmd
+// //**************************************************************************************************
+// //                                    O N M Q T T M E S S A G E                                    *
+// //**************************************************************************************************
+// // Executed when a subscribed message is received.                                                 *
+// // Note that message is not delimited by a '\0'.                                                   *
+// // Note that cmd buffer is shared with serial input.                                               *
+// //**************************************************************************************************
+// void onMqttMessage ( char* topic, byte* payload, unsigned int len )
+// {
+//   const char*  reply ;                                // Result from analyzeCmd
 
-  if ( strstr ( topic, MQTT_SUBTOPIC ) )              // Check on topic, maybe unnecessary
-  {
-    if ( len >= sizeof(cmd) )                         // Message may not be too long
-    {
-      len = sizeof(cmd) - 1 ;
-    }
-    strncpy ( cmd, (char*)payload, len ) ;            // Make copy of message
-    cmd[len] = '\0' ;                                 // Take care of delimeter
-    dbgprint ( "MQTT message arrived [%s], lenght = %d, %s", topic, len, cmd ) ;
-    reply = analyzeCmd ( cmd ) ;                      // Analyze command and handle it
-    dbgprint ( reply ) ;                              // Result for debugging
-  }
-}
+//   if ( strstr ( topic, MQTT_SUBTOPIC ) )              // Check on topic, maybe unnecessary
+//   {
+//     if ( len >= sizeof(cmd) )                         // Message may not be too long
+//     {
+//       len = sizeof(cmd) - 1 ;
+//     }
+//     strncpy ( cmd, (char*)payload, len ) ;            // Make copy of message
+//     cmd[len] = '\0' ;                                 // Take care of delimeter
+//     dbgprint ( "MQTT message arrived [%s], lenght = %d, %s", topic, len, cmd ) ;
+//     reply = analyzeCmd ( cmd ) ;                      // Analyze command and handle it
+//     dbgprint ( reply ) ;                              // Result for debugging
+//   }
+// }
 
 
 //**************************************************************************************************
@@ -2977,13 +3001,13 @@ void scanserial()
       if ( len )
       {
         strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
-        if ( nxtserial )                         // NEXTION test possible?
-        {
-          if ( serialcmd.startsWith ( "N:" ) )   // Command meant to test Nextion display?
-          {
-            nxtserial->printf ( "%s\xFF\xFF\xFF", cmd + 2 ) ;
-          }
-        }
+        // if ( nxtserial )                         // NEXTION test possible?
+        // {
+        //   if ( serialcmd.startsWith ( "N:" ) )   // Command meant to test Nextion display?
+        //   {
+        //     nxtserial->printf ( "%s\xFF\xFF\xFF", cmd + 2 ) ;
+        //   }
+        // }
         reply = analyzeCmd ( cmd ) ;             // Analyze command and handle it
         dbgprint ( reply ) ;                     // Result for debugging
         serialcmd = "" ;                         // Prepare for new command
@@ -3001,56 +3025,56 @@ void scanserial()
 }
 
 
-//**************************************************************************************************
-//                                     S C A N S E R I A L 2                                       *
-//**************************************************************************************************
-// Listen to commands on the 2nd Serial inputline (NEXTION).                                       *
-//**************************************************************************************************
-void scanserial2()
-{
-  static String  serialcmd ;                       // Command from Serial input
-  char           c ;                               // Input character
-  const char*    reply = "" ;                      // Reply string from analyzeCmd
-  uint16_t       len ;                             // Length of input string
-  static uint8_t ffcount = 0 ;                     // Counter for 3 tmes "0xFF"
+// //**************************************************************************************************
+// //                                     S C A N S E R I A L 2                                       *
+// //**************************************************************************************************
+// // Listen to commands on the 2nd Serial inputline (NEXTION).                                       *
+// //**************************************************************************************************
+// void scanserial2()
+// {
+//   static String  serialcmd ;                       // Command from Serial input
+//   char           c ;                               // Input character
+//   const char*    reply = "" ;                      // Reply string from analyzeCmd
+//   uint16_t       len ;                             // Length of input string
+//   static uint8_t ffcount = 0 ;                     // Counter for 3 tmes "0xFF"
 
-  if ( nxtserial )                                 // NEXTION active?
-  {
-    while ( nxtserial->available() )               // Yes, any input seen?
-    {
-      c =  (char)nxtserial->read() ;               // Yes, read the next input character
-      len = serialcmd.length() ;                   // Get the length of the current string
-      if ( c == 0xFF )                             // End of command?
-      {
-        if ( ++ffcount < 3 )                       // 3 times FF?
-        {
-          continue ;                               // No, continue to read
-        }
-        ffcount = 0 ;                              // For next command
-        if ( len )
-        {
-          strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
-          dbgprint ( "NEXTION command seen %02X %s",
-                     cmd[0], cmd + 1 ) ;
-          if ( cmd[0] == 0x70 )                    // Button pressed?
-          { 
-            reply = analyzeCmd ( cmd + 1 ) ;       // Analyze command and handle it
-            dbgprint ( reply ) ;                   // Result for debugging
-          }
-          serialcmd = "" ;                         // Prepare for new command
-        }
-      }
-      else if ( c >= ' ' )                         // Only accept useful characters
-      {
-        serialcmd += c ;                           // Add to the command
-      }
-      if ( len >= ( sizeof(cmd) - 2 )  )           // Check for excessive length
-      {
-        serialcmd = "" ;                           // Too long, reset
-      }
-    }
-  }
-}
+//   if ( nxtserial )                                 // NEXTION active?
+//   {
+//     while ( nxtserial->available() )               // Yes, any input seen?
+//     {
+//       c =  (char)nxtserial->read() ;               // Yes, read the next input character
+//       len = serialcmd.length() ;                   // Get the length of the current string
+//       if ( c == 0xFF )                             // End of command?
+//       {
+//         if ( ++ffcount < 3 )                       // 3 times FF?
+//         {
+//           continue ;                               // No, continue to read
+//         }
+//         ffcount = 0 ;                              // For next command
+//         if ( len )
+//         {
+//           strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
+//           dbgprint ( "NEXTION command seen %02X %s",
+//                      cmd[0], cmd + 1 ) ;
+//           if ( cmd[0] == 0x70 )                    // Button pressed?
+//           { 
+//             reply = analyzeCmd ( cmd + 1 ) ;       // Analyze command and handle it
+//             dbgprint ( reply ) ;                   // Result for debugging
+//           }
+//           serialcmd = "" ;                         // Prepare for new command
+//         }
+//       }
+//       else if ( c >= ' ' )                         // Only accept useful characters
+//       {
+//         serialcmd += c ;                           // Add to the command
+//       }
+//       if ( len >= ( sizeof(cmd) - 2 )  )           // Check for excessive length
+//       {
+//         serialcmd = "" ;                           // Too long, reset
+//       }
+//     }
+//   }
+// }
 
 
 //**************************************************************************************************
@@ -3129,36 +3153,36 @@ void  scandigital()
 }
 
 
-//**************************************************************************************************
-//                                     S C A N I R                                                 *
-//**************************************************************************************************
-// See if IR input is available.  Execute the programmed command.                                  *
-//**************************************************************************************************
-void scanIR()
-{
-  char        mykey[20] ;                                   // For numerated key
-  String      val ;                                         // Contents of preference entry
-  const char* reply ;                                       // Result of analyzeCmd
+// //**************************************************************************************************
+// //                                     S C A N I R                                                 *
+// //**************************************************************************************************
+// // See if IR input is available.  Execute the programmed command.                                  *
+// //**************************************************************************************************
+// void scanIR()
+// {
+//   char        mykey[20] ;                                   // For numerated key
+//   String      val ;                                         // Contents of preference entry
+//   const char* reply ;                                       // Result of analyzeCmd
 
-  if ( ir_value )                                           // Any input?
-  {
-    sprintf ( mykey, "ir_%04X", ir_value ) ;                // Form key in preferences
-    if ( nvssearch ( mykey ) )
-    {
-      val = nvsgetstr ( mykey ) ;                           // Get the contents
-      dbgprint ( "IR code %04X received. Will execute %s",
-                 ir_value, val.c_str() ) ;
-      reply = analyzeCmd ( val.c_str() ) ;                  // Analyze command and handle it
-      dbgprint ( reply ) ;                                  // Result for debugging
-    }
-    else
-    {
-      dbgprint ( "IR code %04X received, but not found in preferences!  Timing %d/%d",
-                 ir_value, ir_0, ir_1 ) ;
-    }
-    ir_value = 0 ;                                          // Reset IR code received
-  }
-}
+//   if ( ir_value )                                           // Any input?
+//   {
+//     sprintf ( mykey, "ir_%04X", ir_value ) ;                // Form key in preferences
+//     if ( nvssearch ( mykey ) )
+//     {
+//       val = nvsgetstr ( mykey ) ;                           // Get the contents
+//       dbgprint ( "IR code %04X received. Will execute %s",
+//                  ir_value, val.c_str() ) ;
+//       reply = analyzeCmd ( val.c_str() ) ;                  // Analyze command and handle it
+//       dbgprint ( reply ) ;                                  // Result for debugging
+//     }
+//     else
+//     {
+//       dbgprint ( "IR code %04X received, but not found in preferences!  Timing %d/%d",
+//                  ir_value, ir_0, ir_1 ) ;
+//     }
+//     ir_value = 0 ;                                          // Reset IR code received
+//   }
+// }
 
 
 //**************************************************************************************************
@@ -3499,8 +3523,8 @@ void setup()
   namespace_ID = FindNsID ( NAME ) ;                     // Find ID of our namespace in NVS
   fillkeylist() ;                                        // Fill keynames with all keys
   memset ( &ini_block, 0, sizeof(ini_block) ) ;          // Init ini_block
-  ini_block.mqttport = 1883 ;                            // Default port for MQTT
-  ini_block.mqttprefix = "" ;                            // No prefix for MQTT topics seen yet
+  // ini_block.mqttport = 1883 ;                            // Default port for MQTT
+  // ini_block.mqttprefix = "" ;                            // No prefix for MQTT topics seen yet
   ini_block.clk_server = "pool.ntp.org" ;                // Default server for NTP
   ini_block.clk_offset = 1 ;                             // Default Amsterdam time zone
   ini_block.clk_dst = 1 ;                                // DST is +1 hour
@@ -3532,14 +3556,14 @@ void setup()
                               ini_block.vs_dreq_pin,
                               ini_block.vs_shutdown_pin,
                               ini_block.vs_shutdownx_pin ) ;
-  if ( ini_block.ir_pin >= 0 )
-  {
-    dbgprint ( "Enable pin %d for IR",
-               ini_block.ir_pin ) ;
-    pinMode ( ini_block.ir_pin, INPUT ) ;                // Pin for IR receiver VS1838B
-    attachInterrupt ( ini_block.ir_pin,                  // Interrupts will be handle by isr_IR
-                      isr_IR, CHANGE ) ;
-  }
+  // if ( ini_block.ir_pin >= 0 )
+  // {
+  //   dbgprint ( "Enable pin %d for IR",
+  //              ini_block.ir_pin ) ;
+  //   pinMode ( ini_block.ir_pin, INPUT ) ;                // Pin for IR receiver VS1838B
+  //   attachInterrupt ( ini_block.ir_pin,                  // Interrupts will be handle by isr_IR
+  //                     isr_IR, CHANGE ) ;
+  // }
   if ( ( ini_block.tft_cs_pin >= 0  ) ||                 // Display configured?
        ( ini_block.tft_scl_pin >= 0 ) )
   {
@@ -3554,7 +3578,7 @@ void setup()
       dsp_print ( "Starting..." "\n" "Version:" ) ;
       strncpy ( tmpstr, VERSION, 16 ) ;                  // Limit version length
       dsp_println ( tmpstr ) ;
-      dsp_println ( "By Ed Smallenburg" ) ;
+      dsp_println ( "By Ed Smallenburg and Rafal Magda" ) ;
       dsp_update() ;                                     // Show on physical screen
     }
   }
@@ -3599,7 +3623,7 @@ void setup()
   WiFi.persistent ( false ) ;                            // Do not save SSID and password
   WiFi.disconnect() ;                                    // After restart router could still
   delay ( 100 ) ;                                        // keep old connection
-  listNetworks() ;                                       // Search for WiFi networks
+  // listNetworks() ;                                       // Search for WiFi networks
   readprefs ( false ) ;                                  // Read preferences
   tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA, NAME ) ;
   vs1053player->begin() ;                                 // Initialize VS1053 player
@@ -3612,28 +3636,28 @@ void setup()
   if ( NetworkFound )                                    // OTA and MQTT only if Wifi network found
   {
     dbgprint ( "Network found. Starting mqtt and OTA" ) ;
-    mqtt_on = ( ini_block.mqttbroker.length() > 0 ) &&   // Use MQTT if broker specified
-              ( ini_block.mqttbroker != "none" ) ;
-    ArduinoOTA.setHostname ( NAME ) ;                    // Set the hostname
-    ArduinoOTA.onStart ( otastart ) ;
-    ArduinoOTA.begin() ;                                 // Allow update over the air
-    if ( mqtt_on )                                       // Broker specified?
-    {
-      if ( ( ini_block.mqttprefix.length() == 0 ) ||     // No prefix?
-           ( ini_block.mqttprefix == "none" ) )
-      {
-        WiFi.macAddress ( mac ) ;                        // Get mac-adress
-        sprintf ( tmpstr, "P%02X%02X%02X%02X",           // Generate string from last part
-                  mac[3], mac[2],
-                  mac[1], mac[0] ) ;
-        ini_block.mqttprefix = String ( tmpstr ) ;       // Save for further use
-      }
-      dbgprint ( "MQTT uses prefix %s", ini_block.mqttprefix.c_str() ) ;
-      dbgprint ( "Init MQTT" ) ;
-      mqttclient.setServer(ini_block.mqttbroker.c_str(), // Specify the broker
-                           ini_block.mqttport ) ;        // And the port
-      mqttclient.setCallback ( onMqttMessage ) ;         // Set callback on receive
-    }
+    // mqtt_on = ( ini_block.mqttbroker.length() > 0 ) &&   // Use MQTT if broker specified
+    //           ( ini_block.mqttbroker != "none" ) ;
+    // ArduinoOTA.setHostname ( NAME ) ;                    // Set the hostname
+    // ArduinoOTA.onStart ( otastart ) ;
+    // ArduinoOTA.begin() ;                                 // Allow update over the air
+    // if ( mqtt_on )                                       // Broker specified?
+    // {
+    //   if ( ( ini_block.mqttprefix.length() == 0 ) ||     // No prefix?
+    //        ( ini_block.mqttprefix == "none" ) )
+    //   {
+    //     WiFi.macAddress ( mac ) ;                        // Get mac-adress
+    //     sprintf ( tmpstr, "P%02X%02X%02X%02X",           // Generate string from last part
+    //               mac[3], mac[2],
+    //               mac[1], mac[0] ) ;
+    //     ini_block.mqttprefix = String ( tmpstr ) ;       // Save for further use
+    //   }
+    //   dbgprint ( "MQTT uses prefix %s", ini_block.mqttprefix.c_str() ) ;
+    //   dbgprint ( "Init MQTT" ) ;
+    //   mqttclient.setServer(ini_block.mqttbroker.c_str(), // Specify the broker
+    //                        ini_block.mqttport ) ;        // And the port
+    //   mqttclient.setCallback ( onMqttMessage ) ;         // Set callback on receive
+    // }
     if ( MDNS.begin ( NAME ) )                           // Start MDNS transponder
     {
       dbgprint ( "MDNS responder started" ) ;
@@ -3651,11 +3675,14 @@ void setup()
   timerAttachInterrupt ( timer, &timer100, true ) ;      // Call timer100() on timer alarm
   timerAlarmWrite ( timer, 100000, true ) ;              // Alarm every 100 msec
   timerAlarmEnable ( timer ) ;                           // Enable the timer
-  delay ( 1000 ) ;                                       // Show IP for a while
-  configTime ( ini_block.clk_offset * 3600,
-               ini_block.clk_dst * 3600,
-               ini_block.clk_server.c_str() ) ;          // GMT offset, daylight offset in seconds
+  // configTime ( ini_block.clk_offset * 3600,
+  //              ini_block.clk_dst * 3600,
+  //              ini_block.clk_server.c_str() ) ;          // GMT offset, daylight offset in seconds
+  // https://www.pool.ntp.org/zone/pl
+  // Set timezone to CEST
+  configTzTime("CET-1CEST,M3.5.0,M10.5.0", "2.pl.pool.ntp.org", "1.pl.pool.ntp.org", "0.pl.pool.ntp.org");
   timeinfo.tm_year = 0 ;                                 // Set TOD to illegal
+  delay ( 100 ) ;                                       // Show IP for a while
   // Init settings for rotary switch (if existing).
   if ( ( ini_block.enc_clk_pin + ini_block.enc_dt_pin + ini_block.enc_sw_pin ) > 2 )
   {
@@ -3701,6 +3728,14 @@ void setup()
     NULL,                                                 // parameter of the task
     1,                                                    // priority of the task
     &xspftask ) ;                                         // Task handle to keep track of created task
+
+    xTaskCreate (
+    statusTask,                                              // Task to handle status display
+    "StatusTask",                                            // name of task.
+    2048,                                                 // Stack size of task
+    NULL,                                                 // parameter of the task
+    1,                                                    // priority of the task (1 lowest)
+    &xstatustask ) ;                                         // Task handle to keep track of created task
 }
 
 
@@ -3796,14 +3831,14 @@ void writeprefs()
                      String ( "/*******" ) ;                  // Hide in debug line
             }
           }
-          if ( ( key.indexOf ( "mqttpasswd" ) == 0 ) )        // Sensitive info?
-          {
-            if ( contents.indexOf ( "****" ) == 0 )           // Hidden password?
-            {
-              contents = ini_block.mqttpasswd ;               // Retrieve mqtt password
-            }
-            dstr = String ( "*******" ) ;                     // Hide in debug line
-          }
+          // if ( ( key.indexOf ( "mqttpasswd" ) == 0 ) )        // Sensitive info?
+          // {
+          //   if ( contents.indexOf ( "****" ) == 0 )           // Hidden password?
+          //   {
+          //     contents = ini_block.mqttpasswd ;               // Retrieve mqtt password
+          //   }
+          //   dstr = String ( "*******" ) ;                     // Hide in debug line
+          // }
           dbgprint ( "writeprefs setstr %s = %s",
                      key.c_str(), dstr.c_str() ) ;
           nvssetstr ( key.c_str(), contents ) ;               // Save new pair
@@ -4155,7 +4190,7 @@ void handleIpPub()
     return ;
   }
   pubtime = millis() ;                                     // Set time of last publish
-  mqttpub.trigger ( MQTT_IP ) ;                            // Request re-publish IP
+  // mqttpub.trigger ( MQTT_IP ) ;                            // Request re-publish IP
 }
 
 
@@ -4176,11 +4211,10 @@ void handleVolPub()
   pubtime = millis() ;                                     // Set time of last publish
   if ( ini_block.reqvol != oldvol )                        // Volume change?
   {
-    mqttpub.trigger ( MQTT_VOLUME ) ;                      // Request publish VOLUME
+    // mqttpub.trigger ( MQTT_VOLUME ) ;                      // Request publish VOLUME
     oldvol = ini_block.reqvol ;                            // Remember publishe volume
   }
 }
-
 
 
 //**************************************************************************************************
@@ -4307,17 +4341,17 @@ void chk_enc()
   switch ( enc_menu_mode )                                    // Which mode (VOLUME, PRESET, TRACK)?
   {
     case VOLUME :
-      if ( ( ini_block.reqvol + rotationcount ) < 0 )         // Limit volume
+      if ( ( ini_block.reqvol + rotationcount * VOLUME_MULTIPLIER ) < 0 )         // Limit volume
       {
         ini_block.reqvol = 0 ;                                // Limit to normal values
       }
-      else if ( ( ini_block.reqvol + rotationcount ) > 100 )
+      else if ( ( ini_block.reqvol + rotationcount * VOLUME_MULTIPLIER ) > 100 )
       {
         ini_block.reqvol = 100 ;                              // Limit to normal values
       }
       else
       {
-        ini_block.reqvol += rotationcount ;
+        ini_block.reqvol += rotationcount * VOLUME_MULTIPLIER ;
       }
       muteflag = false ;                                      // Mute off
       break ;
@@ -4520,7 +4554,7 @@ void mp3loop()
   {
     hostreq = false ;
     currentpreset = ini_block.newpreset ;                 // Remember current preset
-    mqttpub.trigger ( MQTT_PRESET ) ;                     // Request publishing to MQTT
+    // mqttpub.trigger ( MQTT_PRESET ) ;                     // Request publishing to MQTT
     // Find out if this URL is on localhost (SD).
     localfile = ( host.indexOf ( "localhost/" ) >= 0 ) ;
     if ( localfile )                                      // Play file from localhost?
@@ -4553,13 +4587,13 @@ void loop()
   mp3loop() ;                                       // Do mp3 related actions
   if ( updatereq )                                  // Software update requested?
   {
-    if ( displaytype == T_NEXTION )                 // NEXTION in use?
-    { 
-      update_software ( "lstmodn",                  // Yes, update NEXTION image from remote image
-                        UPDATEHOST, TFTFILE ) ;
-    }
-    update_software ( "lstmods",                    // Update sketch from remote file
-                      UPDATEHOST, BINFILE ) ;
+    // if ( displaytype == T_NEXTION )                 // NEXTION in use?
+    // { 
+    //   update_software ( "lstmodn",                  // Yes, update NEXTION image from remote image
+    //                     UPDATEHOST, TFTFILE ) ;
+    // }
+    // update_software ( "lstmods",                    // Update sketch from remote file
+    //                   UPDATEHOST, BINFILE ) ;
     resetreq = true ;                               // And reset
   }
   if ( resetreq )                                   // Reset requested?
@@ -4568,10 +4602,10 @@ void loop()
     ESP.restart() ;                                 // Reboot
   }
   scanserial() ;                                    // Handle serial input
-  scanserial2() ;                                   // Handle serial input from NEXTION (if active)
+  // scanserial2() ;                                   // Handle serial input from NEXTION (if active)
   scandigital() ;                                   // Scan digital inputs
-  scanIR() ;                                        // See if IR input
-  ArduinoOTA.handle() ;                             // Check for OTA
+  // scanIR() ;                                        // See if IR input
+  // ArduinoOTA.handle() ;                             // Check for OTA
   mp3loop() ;                                       // Do more mp3 related actions
   handlehttpreply() ;
   cmdclient = cmdserver.available() ;               // Check Input from client?
@@ -4580,11 +4614,11 @@ void loop()
     dbgprint ( "Command client available" ) ;
     handlehttp() ;
   }
-  // Handle MQTT.
-  if ( mqtt_on )
-  {
-    mqttclient.loop() ;                             // Handling of MQTT connection
-  }
+  // // Handle MQTT.
+  // if ( mqtt_on )
+  // {
+  //   mqttclient.loop() ;                             // Handling of MQTT connection
+  // }
   handleSaveReq() ;                                 // See if time to save settings
   handleIpPub() ;                                   // See if time to publish IP
   handleVolPub() ;                                  // See if time to publish volume
@@ -4762,7 +4796,7 @@ void handlebyte_ch ( uint8_t b )
           icyname = metaline.substring(9) ;            // Get station name
           icyname.trim() ;                             // Remove leading and trailing spaces
           tftset ( 2, icyname ) ;                      // Set screen segment bottom part
-          mqttpub.trigger ( MQTT_ICYNAME ) ;           // Request publishing to MQTT
+          // mqttpub.trigger ( MQTT_ICYNAME ) ;           // Request publishing to MQTT
         }
         else if ( lcml.startsWith ( "transfer-encoding:" ) )
         {
@@ -4827,7 +4861,7 @@ void handlebyte_ch ( uint8_t b )
         // "StreamTitle='60s 03 05 Magic60s';StreamUrl='';"
         // Isolate the StreamTitle, remove leading and trailing quotes if present.
         showstreamtitle ( metalinebf ) ;               // Show artist and title if present in metadata
-        mqttpub.trigger ( MQTT_STREAMTITLE ) ;         // Request publishing to MQTT
+        // mqttpub.trigger ( MQTT_STREAMTITLE ) ;         // Request publishing to MQTT
       }
       if ( metalinebfx  > ( METASIZ - 10 ) )           // Unlikely metaline length?
       {
@@ -4873,7 +4907,7 @@ void handlebyte_ch ( uint8_t b )
                    "search for entry %d",
                    playlist_num ) ;
         datamode = PLAYLISTDATA ;                      // Expecting data now
-        mqttpub.trigger ( MQTT_PLAYLISTPOS ) ;         // Playlistposition to MQTT
+        // mqttpub.trigger ( MQTT_PLAYLISTPOS ) ;         // Playlistposition to MQTT
         return ;
       }
     }
@@ -4927,7 +4961,7 @@ void handlebyte_ch ( uint8_t b )
           {
             // Show artist and title if present in metadata
             showstreamtitle ( metaline.substring ( inx + 1 ).c_str(), true ) ;
-            mqttpub.trigger ( MQTT_STREAMTITLE ) ;     // Request publishing to MQTT
+            // mqttpub.trigger ( MQTT_STREAMTITLE ) ;     // Request publishing to MQTT
           }
         }
       }
@@ -5385,30 +5419,30 @@ const char* analyzeCmd ( const char* par, const char* val )
   {
     vs1053player->AdjustRate ( ivalue ) ;             // Yes, adjust
   }
-  else if ( argument.startsWith ( "mqtt" ) )          // Parameter fo MQTT?
-  {
-    strcpy ( reply, "MQTT broker parameter changed. Save and restart to have effect" ) ;
-    if ( argument.indexOf ( "broker" ) > 0 )          // Broker specified?
-    {
-      ini_block.mqttbroker = value ;                  // Yes, set broker accordingly
-    }
-    else if ( argument.indexOf ( "prefix" ) > 0 )     // Port specified?
-    {
-      ini_block.mqttprefix = value ;                  // Yes, set port user accordingly
-    }
-    else if ( argument.indexOf ( "port" ) > 0 )       // Port specified?
-    {
-      ini_block.mqttport = ivalue ;                   // Yes, set port user accordingly
-    }
-    else if ( argument.indexOf ( "user" ) > 0 )       // User specified?
-    {
-      ini_block.mqttuser = value ;                    // Yes, set user accordingly
-    }
-    else if ( argument.indexOf ( "passwd" ) > 0 )     // Password specified?
-    {
-      ini_block.mqttpasswd = value.c_str() ;          // Yes, set broker password accordingly
-    }
-  }
+  // else if ( argument.startsWith ( "mqtt" ) )          // Parameter fo MQTT?
+  // {
+  //   strcpy ( reply, "MQTT broker parameter changed. Save and restart to have effect" ) ;
+  //   if ( argument.indexOf ( "broker" ) > 0 )          // Broker specified?
+  //   {
+  //     ini_block.mqttbroker = value ;                  // Yes, set broker accordingly
+  //   }
+  //   else if ( argument.indexOf ( "prefix" ) > 0 )     // Port specified?
+  //   {
+  //     ini_block.mqttprefix = value ;                  // Yes, set port user accordingly
+  //   }
+  //   else if ( argument.indexOf ( "port" ) > 0 )       // Port specified?
+  //   {
+  //     ini_block.mqttport = ivalue ;                   // Yes, set port user accordingly
+  //   }
+  //   else if ( argument.indexOf ( "user" ) > 0 )       // User specified?
+  //   {
+  //     ini_block.mqttuser = value ;                    // Yes, set user accordingly
+  //   }
+  //   else if ( argument.indexOf ( "passwd" ) > 0 )     // Password specified?
+  //   {
+  //     ini_block.mqttpasswd = value.c_str() ;          // Yes, set broker password accordingly
+  //   }
+  // }
   else if ( argument == "debug" )                     // debug on/off request?
   {
     DEBUG = ivalue ;                                  // Yes, set flag accordingly
@@ -5485,10 +5519,10 @@ void displayinfo ( uint16_t inx )
   scrseg_struct* p = &tftdata[inx] ;
   uint16_t len ;                                           // Length of string, later buffer length
 
-  if ( inx == 0 )                                          // Topline is shorter
-  {
-    width += TIMEPOS ;                                     // Leave space for time
-  }
+  // if ( inx == 0 )                                          // Topline is shorter
+  // {
+  //   width += TIMEPOS ;                                     // Leave space for time
+  // }
   if ( tft )                                               // TFT active?
   {
     dsp_fillRect ( 0, p->y, width, p->height, BLACK ) ;    // Clear the space for new info
@@ -5610,14 +5644,14 @@ void playtask ( void * parameter )
           break ;
         case QSTARTSONG:
           playingstat = 1 ;                                         // Status for MQTT
-          mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
+          // mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
           claimSPI ( "startsong" ) ;                                // Claim SPI bus
           vs1053player->startSong() ;                               // START, start player
           releaseSPI() ;                                            // Release SPI bus
           break ;
         case QSTOPSONG:
           playingstat = 0 ;                                         // Status for MQTT
-          mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
+          // mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
           claimSPI ( "stopsong" ) ;                                 // Claim SPI bus
           vs1053player->setVolume ( 0 ) ;                           // Mute
           vs1053player->stopSong() ;                                // STOP, stop player
@@ -5675,23 +5709,23 @@ void handle_spec()
     if ( NetworkFound  )                                      // Time available?
     {
       gettime() ;                                             // Yes, get the current time
-      displaytime ( timetxt ) ;                               // Write to TFT screen
+      displaytime2 ( &timeinfo, false ) ;                               // Write to TFT screen
       displayvolume() ;                                       // Show volume on display
       displaybattery() ;                                      // Show battery charge on display
     }
   }
   releaseSPI() ;                                              // Release SPI bus
-  if ( mqtt_on )
-  {
-    if ( !mqttclient.connected() )                            // See if connected
-    {
-      mqttreconnect() ;                                       // No, reconnect
-    }
-    else
-    {
-      mqttpub.publishtopic() ;                                // Check if any publishing to do
-    }
-  }
+  // if ( mqtt_on )
+  // {
+  //   if ( !mqttclient.connected() )                            // See if connected
+  //   {
+  //     mqttreconnect() ;                                       // No, reconnect
+  //   }
+  //   else
+  //   {
+  //     mqttpub.publishtopic() ;                                // Check if any publishing to do
+  //   }
+  // }
 }
 
 
@@ -5714,3 +5748,20 @@ void spftask ( void * parameter )
   //vTaskDelete ( NULL ) ;                                          // Will never arrive here
 }
 
+void statusTask(void *parameter)
+{
+  static char statusString[180];
+  int av;
+  int wifiStrength;
+  while (true)
+  {
+    av = mp3client.available(); // Available in stream
+    wifiStrength = rssiToStrength(WiFi.RSSI());
+    sprintf(statusString, "Queue %d, Stream %d, Wifi %d %%",
+            uxQueueMessagesWaiting(dataqueue),
+            av,
+            wifiStrength);
+    tftset(0, statusString);
+    vTaskDelay(500 / portTICK_PERIOD_MS); // Pause for a short time
+  }
+}

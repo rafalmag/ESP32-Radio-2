@@ -23,10 +23,10 @@
 #define TFTSECS 4
 scrseg_struct     tftdata[TFTSECS] =                        // Screen divided in 3 segments + 1 overlay
 {                                                           // One text line is 8 pixels
-  { false, WHITE,   0,  8, "" },                            // 1 top line
-  { false, CYAN,   20, 64, "" },                            // 8 lines in the middle
-  { false, YELLOW, 90, 32, "" },                            // 4 lines at the bottom
-  { false, GREEN,  90, 32, "" }                             // 4 lines at the bottom for rotary encoder
+  { false, WHITE, 309,  8, "" },                            // 1 line - name and old clock
+  { false, CYAN,   24, 32, "" },                            // 4 lines - song/station detailed info
+  { false, YELLOW,  0, 24, "" },                            // 3 lines - station
+  { false, GREEN,  24, 32, "" }                             // 4 lines - mute/unmute/station select
 } ;
 
 
@@ -92,6 +92,95 @@ void displaybattery()
   }
 }
 
+float sx = 0, sy = 1, mx = 1, my = 0, hx = -1, hy = 0; // Saved H, M, S x & y multipliers
+float sdeg = 0, mdeg = 0, hdeg = 0;
+uint16_t osx = 120, osy = 120, omx = 120, omy = 120, ohx = 120, ohy = 120; // Saved H, M, S x & y coords
+uint16_t x0 = 0, x1 = 0, yy0 = 0, yy1 = 0;
+
+#define TFT_BLACK   ILI9341_BLACK
+#define TFT_WHITE   ILI9341_WHITE
+#define TFT_RED   ILI9341_RED
+#define CLOCK_BEZEL_COLOR   ILI9341_MAROON
+#define TFT_BACKGROUND ILI9341_BLACK
+#define CLOCK_Y_OFFSET 56
+
+void initClock(){
+  // Draw clock face
+  tft->fillCircle(120, 120 + CLOCK_Y_OFFSET, 118, CLOCK_BEZEL_COLOR);
+  tft->fillCircle(120, 120 + CLOCK_Y_OFFSET, 110, TFT_BLACK);
+
+  // Draw 12 lines
+  for (int i = 0; i < 360; i += 30)
+  {
+    sx = cos((i - 90) * 0.0174532925);
+    sy = sin((i - 90) * 0.0174532925);
+    x0 = sx * 114 + 120;
+    yy0 = sy * 114 + 120;
+    x1 = sx * 100 + 120;
+    yy1 = sy * 100 + 120;
+
+    tft->drawLine(x0, yy0 + CLOCK_Y_OFFSET, x1, yy1 + CLOCK_Y_OFFSET, CLOCK_BEZEL_COLOR);
+  }
+
+  // Draw 60 dots
+  for (int i = 0; i < 360; i += 6)
+  {
+    sx = cos((i - 90) * 0.0174532925);
+    sy = sin((i - 90) * 0.0174532925);
+    x0 = sx * 102 + 120;
+    yy0 = sy * 102 + 120;
+    // Draw minute markers
+    tft->drawPixel(x0, yy0+CLOCK_Y_OFFSET, TFT_WHITE);
+
+    // Draw main quadrant dots
+    if (i == 0 || i == 180)
+      tft->fillCircle(x0, yy0+CLOCK_Y_OFFSET, 2, TFT_WHITE);
+    if (i == 90 || i == 270)
+      tft->fillCircle(x0, yy0+CLOCK_Y_OFFSET, 2, TFT_WHITE);
+  }
+
+  tft->fillCircle(120, 121+CLOCK_Y_OFFSET, 3, TFT_WHITE);
+}
+
+void        displaytime2 ( tm* timeinfo, boolean redraw) {
+  if(!tft) return;
+  if(redraw){
+    initClock();
+  }
+
+   // Pre-compute hand degrees, x & y coords for a fast screen update
+    sdeg = timeinfo->tm_sec * 6;                     // 0-59 -> 0-354
+    mdeg = timeinfo->tm_min * 6 + sdeg * 0.01666667; // 0-59 -> 0-360 - includes seconds
+    hdeg = timeinfo->tm_hour * 30 + mdeg * 0.0833333; // 0-11 -> 0-360 - includes minutes and seconds
+    hx = cos((hdeg - 90) * 0.0174532925);
+    hy = sin((hdeg - 90) * 0.0174532925);
+    mx = cos((mdeg - 90) * 0.0174532925);
+    my = sin((mdeg - 90) * 0.0174532925);
+    sx = cos((sdeg - 90) * 0.0174532925);
+    sy = sin((sdeg - 90) * 0.0174532925);
+
+    if (timeinfo->tm_sec == 0 || redraw)
+    {
+      // Erase hour and minute hand positions every minute
+      tft->drawLine(ohx, ohy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_BLACK);
+      ohx = hx * 62 + 121;
+      ohy = hy * 62 + 121;
+      tft->drawLine(omx, omy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_BLACK);
+      omx = mx * 84 + 120;
+      omy = my * 84 + 121;
+    }
+
+    // Redraw new hand positions, hour and minute hands not erased here to avoid flicker
+    tft->drawLine(osx, osy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_BLACK);
+    osx = sx * 90 + 121;
+    osy = sy * 90 + 121;
+    tft->drawLine(osx, osy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_RED);
+    tft->drawLine(ohx, ohy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_WHITE);
+    tft->drawLine(omx, omy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_WHITE);
+    tft->drawLine(osx, osy+CLOCK_Y_OFFSET, 120, 121+CLOCK_Y_OFFSET, TFT_RED);
+
+    tft->fillCircle(120, 121+CLOCK_Y_OFFSET, 3, TFT_RED);
+}
 
 //**************************************************************************************************
 //                                      D I S P L A Y V O L U M E                                  *
@@ -129,35 +218,35 @@ void displayvolume()
 // An empty string will force a refresh on next call.                                              *
 // A character on the screen is 8 pixels high and 6 pixels wide.                                   *
 //**************************************************************************************************
-void displaytime ( const char* str, uint16_t color )
-{
-  static char oldstr[9] = "........" ;             // For compare
-  uint8_t     i ;                                  // Index in strings
-  uint16_t    pos = dsp_getwidth() + TIMEPOS ;     // X-position of character, TIMEPOS is negative
+// void displaytime ( const char* str, uint16_t color )
+// {
+//   static char oldstr[9] = "........" ;             // For compare
+//   uint8_t     i ;                                  // Index in strings
+//   uint16_t    pos = dsp_getwidth() + TIMEPOS ;     // X-position of character, TIMEPOS is negative
 
-  if ( str[0] == '\0' )                            // Empty string?
-  {
-    for ( i = 0 ; i < 8 ; i++ )                    // Set oldstr to dots
-    {
-      oldstr[i] = '.' ;
-    }
-    return ;                                       // No actual display yet
-  }
-  if ( tft )                                       // TFT active?
-  {
-    dsp_setTextColor ( color ) ;                   // Set the requested color
-    for ( i = 0 ; i < 8 ; i++ )                    // Compare old and new
-    {
-      if ( str[i] != oldstr[i] )                   // Difference?
-      {
-        dsp_fillRect ( pos, 0, 6, 8, BLACK ) ;     // Clear the space for new character
-        dsp_setCursor ( pos, 0 ) ;                 // Prepare to show the info
-        dsp_print ( str[i] ) ;                     // Show the character
-        oldstr[i] = str[i] ;                       // Remember for next compare
-      }
-      pos += 6 ;                                   // Next position
-    }
-  }
-}
+//   if ( str[0] == '\0' )                            // Empty string?
+//   {
+//     for ( i = 0 ; i < 8 ; i++ )                    // Set oldstr to dots
+//     {
+//       oldstr[i] = '.' ;
+//     }
+//     return ;                                       // No actual display yet
+//   }
+//   if ( tft )                                       // TFT active?
+//   {
+//     dsp_setTextColor ( color ) ;                   // Set the requested color
+//     for ( i = 0 ; i < 8 ; i++ )                    // Compare old and new
+//     {
+//       if ( str[i] != oldstr[i] )                   // Difference?
+//       {
+//         dsp_fillRect ( pos, 0, 6, 8, BLACK ) ;     // Clear the space for new character
+//         dsp_setCursor ( pos, 0 ) ;                 // Prepare to show the info
+//         dsp_print ( str[i] ) ;                     // Show the character
+//         oldstr[i] = str[i] ;                       // Remember for next compare
+//       }
+//       pos += 6 ;                                   // Next position
+//     }
+//   }
+// }
 
 

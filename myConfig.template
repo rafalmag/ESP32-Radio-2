@@ -1,0 +1,45 @@
+clk_dst = 1                                          # Offset during daylight saving time (hours)
+clk_offset = 1                                       # Offset with respect to UTC in hours
+clk_server = 2.pl.pool.ntp.org                       # Time server to be used
+#
+ir_40BF = upvolume = 2
+ir_C03F = downvolume = 2
+#
+lstmods = Tue, 05 Feb 2019 16:01:57 GMT
+#
+mqqprefix = none
+mqttbroker = none
+mqttpasswd = *******
+mqttport = 1883
+mqttuser = none
+#
+pin_enc_clk = 17                                     # GPIO Pin number for rotary encoder "CLK"
+pin_enc_dt = 16                                      # GPIO Pin number for rotary encoder "DT"
+pin_enc_sw = 15                                      # GPIO Pin number for rotary encoder "SW"
+pin_ir = -1                                          # GPIO Pin number for IR receiver VS1838B
+pin_sd_cs = -1                                       # GPIO Pin number for SD card "CS"
+pin_tft_cs = 27                                    # GPIO Pin number for TFT "CS"
+pin_tft_dc = 33                                       # GPIO Pin number for TFT "DC"
+pin_vs_cs = 32                                        # GPIO Pin number for VS1053 "CS"
+pin_vs_dcs = 33                                      # GPIO Pin number for VS1053 "DCS"
+pin_vs_dreq = 35                                      # GPIO Pin number for VS1053 "DREQ"
+#
+preset = 0
+preset_00 = d.dktr.pl:8000/trojka.ogg               #  0 - Trojka D
+preset_01 = stream3.polskieradio.pl:8904             #  1 - Trojka S3
+preset_02 = 41.dktr.pl:8000/trojka.ogg              #  2 - Trojka 41
+preset_03 = w.dktr.pl:8000/trojka.ogg               #  3 - Trojka W
+preset_04 = n-6-1.dcs.redcdn.pl/sc/o2/Eurozet/live/chillizet.livx #  4 - Chili Zet
+preset_05 = 149.255.59.162:8062/1               #  5 - The UK 1940s
+#
+toneha = 0
+tonehf = 0
+tonela = 0
+tonelf = 0
+#
+volume = 85
+#
+wifi_00 = ssid/pass
+wifi_01 = ssid/pass
+wifi_02 = ssid/pass
+wifi_03 = ssid/pass
